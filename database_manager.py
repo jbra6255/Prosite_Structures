@@ -1,7 +1,22 @@
 import sqlite3
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from models import Structure, StructureGroup
+
+import hashlib
+
+class User:
+    def __init__(self, id: int, username: str, email: str):
+        self.id = id
+        self.username = username
+        self.email = email
+
+class Project:
+    def __init__(self, id: int, name: str, owner_id: int, description: str = ""):
+        self.id = id
+        self.name = name
+        self.owner_id = owner_id
+        self.description = description
 
 class DatabaseManager:
     def __init__(self, db_path: str = "structures.db"):
@@ -13,12 +28,50 @@ class DatabaseManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                
-                # Create structures table with optional fields
+
+                # Create users table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT UNIQUE NOT NULL,
+                        email TEXT UNIQUE NOT NULL, 
+                        password_hash TEXT NOT NULL,
+                        created_at TIMESTAMP NOT NULL
+                    )
+                ''')
+
+                # Create projects table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS projects (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        description TEXT,
+                        owner_id INTEGER NOT NULL,
+                        created_at TIMESTAMP NOT NULL,
+                        updated_at TIMESTAMP NOT NULL,
+                        FOREIGN KEY (owner_id) REFERENCES users (id),
+                        UNIQUE (name, owner_id)
+                    )
+                ''')
+                            
+                # Create project_sharing table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS projects_SHARING (
+                        proeject_id INTEGER NOT NULL,
+                        user_id INTEGER NOT NULL,
+                        role TEXT NOT NULL,
+                        shared_at TIMESTAMP NOT NULL,
+                        FOREIGN KEY (project_id_) REFERENCES projects (id),
+                        FOREIGN KEY (user_id) REFERENCES users (id),
+                        PRIMARY KEY (project_id, user_id)
+                    )
+                ''')            
+
+                # Create structures table with optional fields and project_id
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS structures (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        structure_id TEXT UNIQUE NOT NULL,
+                        structure_id TEXT NOT NULL,
                         structure_type TEXT NOT NULL,
                         rim_elevation REAL NOT NULL,
                         invert_out_elevation REAL NOT NULL,
@@ -31,18 +84,23 @@ class DatabaseManager:
                         group_name TEXT,
                         created_at TIMESTAMP NOT NULL,
                         updated_at TIMESTAMP NOT NULL,
-                        FOREIGN KEY (upstream_structure_id) REFERENCES structures (structure_id)
+                        FOREIGN KEY (upstream_structure_id, project_id) REFERENCES structures (structure_id, project_id),
+                        FOREIGN KEY (project_id) REFERENCES projects (id), 
+                        UNIQUE (structure_id, project_id)
                     )
                 ''')
                 
-                # Create structure groups table
+                # Create structure groups table with project_id
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS structure_groups (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        name TEXT UNIQUE NOT NULL,
+                        name TEXT NOT NULL,
                         description TEXT,
+                        project_id INTEGER NOT NULL,
                         created_at TIMESTAMP NOT NULL,
-                        updated_at TIMESTAMP NOT NULL
+                        updated_at TIMESTAMP NOT NULL,
+                        FOREIGN KEY (project_id) REFERENCES projects (id),
+                        UNIQUE (name, project_id)
                     )
                 ''')
                 
@@ -51,10 +109,12 @@ class DatabaseManager:
                     CREATE TABLE IF NOT EXISTS group_memberships (
                         group_id INTEGER,
                         structure_id TEXT,
+                        project_id TEXT,
                         added_at TIMESTAMP NOT NULL,
                         FOREIGN KEY (group_id) REFERENCES structure_groups (id),
-                        FOREIGN KEY (structure_id) REFERENCES structures (structure_id),
-                        PRIMARY KEY (group_id, structure_id)
+                        FOREIGN KEY (structure_id, project_id) REFERENCES structures (structure_id, project_id),
+                        FOREIGN KEY (project_id) REFERENCES projects (id),
+                        PRIMARY KEY (group_id, structure_id, project_id)
                     )
                 ''')
                 
@@ -62,6 +122,16 @@ class DatabaseManager:
         except sqlite3.Error as e:
             print(f"Database initialization error: {e}")
             raise
+
+    # === User Management Methods ===
+
+    def create_user(self, username: str, email: str, password: str) -> optional[User]:
+        """Create a new user account"""
+            # FINISH PASSWORD HASH
+            try 
+                # Hash the password
+                password_hash = self.__hash__password(password)
+
 
     def row_to_structure(self, row) -> Structure:
         """Convert a database row to a Structure object"""

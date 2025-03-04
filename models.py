@@ -22,7 +22,7 @@ class Structure:
     @property
     def total_drop(self) -> float:
         """Calculate total drop from frame to invert out"""
-        return self.rim_elevation_elevation - self.invert_out_elevation
+        return self.rim_elevation - self.invert_out_elevation
 
 @dataclass
 class StructureGroup:
