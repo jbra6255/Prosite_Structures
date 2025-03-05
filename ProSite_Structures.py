@@ -38,19 +38,29 @@ class StructureManagementApp:
         ttk.Button(login_frame, text="Login", command=self.login).grid(row=2, column=0, columnspan=2, pady=10)
         ttk.Button(login_frame, text="Register", command=self.show_register_screen).grid(row=3, column=0, columnspan=2)
 
+        # Bind Enter key to login method for both entry fields
+        self.username_entry.bind('<Return>', self.login)
+        self.password_entry.bind('<Return>', self.login)
+
+        # Set focus on username entry
+        self.username_entry.focus()
+
     def show_register_screen(self):
         register_window = tk.Toplevel(self.root)
         register_window.title("Register New User")
-        register_window.geometry("300x200")
+        register_window.geometry("300x250")  # Increased height to accommodate the button
         
+        # Username
         ttk.Label(register_window, text="Username:").pack(pady=5)
         username_entry = ttk.Entry(register_window)
         username_entry.pack(pady=5)
         
+        # Email
         ttk.Label(register_window, text="Email:").pack(pady=5)
         email_entry = ttk.Entry(register_window)
         email_entry.pack(pady=5)
         
+        # Password
         ttk.Label(register_window, text="Password:").pack(pady=5)
         password_entry = ttk.Entry(register_window, show="*")
         password_entry.pack(pady=5)
@@ -62,14 +72,21 @@ class StructureManagementApp:
                     email_entry.get(),
                     password_entry.get()
                 )
-                messagebox.showinfo("Success", "Registration successful! Please login.")
-                register_window.destroy()
+                if user:
+                    messagebox.showinfo("Success", "Registration successful! Please login.")
+                    register_window.destroy()
+                else:
+                    messagebox.showerror("Error", "Registration failed. Username or email may already exist.")
             except Exception as e:
                 messagebox.showerror("Error", str(e))
         
+        # Register button with proper packing
         ttk.Button(register_window, text="Register", command=register).pack(pady=10)
 
-    def login(self):
+    def login(self, event=None):
+        '''
+        Modified to accept an optional event parameter for key binding
+        '''
         user = self.db.authenticate_user(
             self.username_entry.get(),
             self.password_entry.get()
