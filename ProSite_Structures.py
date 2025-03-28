@@ -6,6 +6,7 @@ import ttkbootstrap.dialogs as dialogs
 from database_manager import DatabaseManager
 from typing import List, Dict, Optional
 from models import Structure, StructureGroup
+from logger import AppLogger
 import hashlib
 
 class StructureManagementApp:
@@ -16,12 +17,16 @@ class StructureManagementApp:
         self.root.geometry("900x600")
         self.root.minsize(800, 500)
 
+        # Initialize logger
+        from logger import AppLogger
+        self.logger = AppLogger().logger
+        self.logger.info("Application starting")
+
         # Initialize database
         self.db = DatabaseManager()
         self.current_user = None
         self.current_project = None
         
-
         # Structure type options
         self.structure_types = ['CB', 'JB', 'DI', 'HW', 'UGDS']
         
@@ -185,16 +190,23 @@ class StructureManagementApp:
         ).pack(fill="x")
 
     def login(self, event=None):
-        user = self.db.authenticate_user(
-            self.username_entry.get(),
-            self.password_entry.get()
-        )
-        
-        if user:
-            self.current_user = user
-            self.show_project_selection()
-        else:
-            Messagebox.show_error("Invalid username or password", "Login Failed")
+        """Log in a user with proper error logging"""
+        try:
+            user = self.db.authenticate_user(
+                self.username_entry.get(),
+                self.password_entry.get()
+            )
+            
+            if user:
+                self.current_user = user
+                self.logger.info(f"User logged in: {user.username}")
+                self.show_project_selection()
+            else:
+                self.logger.warning(f"Failed login attempt for username: {self.username_entry.get()}")
+                Messagebox.show_error("Invalid username or password", "Login Failed")
+        except Exception as e:
+            self.logger.error(f"Login error: {e}", exc_info=True)
+            Messagebox.show_error("An unexpected error occurred during login", "System Error")
 
     def show_project_selection(self):
         # Clear existing widgets
@@ -488,6 +500,7 @@ class StructureManagementApp:
         ).pack(side="left", padx=2)
         
         # Right side - Form with scrolling capability
+
         # Create a canvas with scrollbar for the form
         canvas = tk.Canvas(details_frame, highlightthickness=0)
         form_scrollbar = ttk.Scrollbar(details_frame, orient="vertical", command=canvas.yview)
@@ -544,34 +557,10 @@ class StructureManagementApp:
         ttk.Separator(form_frame).grid(row=row, column=0, columnspan=2, sticky="ew", pady=15)
         row += 1
         
-        # Invert section title
-        ttk.Label(
-            form_frame, 
-            text="Additional Inverts", 
-            font=("Helvetica", 10, "bold")
-        ).grid(row=row, column=0, columnspan=2, sticky="w", pady=(0, 10))
-        row += 1
-        
-        # Frame for inverts
-        invert_frame = ttk.Frame(form_frame)
-        invert_frame.grid(row=row, column=0, columnspan=2, sticky="ew")
-        
-        # Invert entries
-        self.invert_entries = []
-        self.add_invert_entry(invert_frame)
-        
-        ttk.Button(
-            invert_frame, 
-            text='Add Invert', 
-            bootstyle="secondary",
-            command=lambda: self.add_invert_entry(invert_frame)
-        ).pack(pady=10)
-        
-        # Add another separator
-        row += 1
+        # Add separator before action buttons
         ttk.Separator(form_frame).grid(row=row, column=0, columnspan=2, sticky="ew", pady=15)
         row += 1
-        
+
         # Action buttons with modern styling
         action_frame = ttk.Frame(form_frame)
         action_frame.grid(row=row, column=0, columnspan=2, sticky="ew", pady=10)
@@ -689,7 +678,8 @@ class StructureManagementApp:
                 upstream_structure_id=upstream_structure_id,
                 pipe_length=pipe_length,
                 pipe_diameter=pipe_diameter,
-                pipe_type=pipe_type
+                pipe_type=pipe_type,
+                frame_type=frame_type
             )
             
             # Add to database
@@ -709,11 +699,11 @@ class StructureManagementApp:
                 self.load_structures()
                 
                 # Add structure to the treeview
-                self.structure_tree.insert(
-                    "", 
-                    "end", 
-                    values=(structure_id, structure_type, "Active")
-                )
+                # self.structure_tree.insert(
+                #     "", 
+                #     "end", 
+                #     values=(structure_id, structure_type, "Active")
+                # )
             else:
                 # Error message with ttkbootstrap styling
                 Messagebox.show_error(
@@ -768,11 +758,6 @@ class StructureManagementApp:
         """Clear all structure form fields"""
         for entry in self.entries.values():
             entry.delete(0, tk.END)
-        
-        # Clear invert entries
-        for angle_entry, elevation_entry in self.invert_entries:
-            angle_entry.delete(0, tk.END)
-            elevation_entry.delete(0, tk.END)
 
     def show_structure_details(self, event):
         """Show details for selected structure in treeview"""
@@ -1111,37 +1096,6 @@ class StructureManagementApp:
             bootstyle="secondary",
             command=report_window.destroy
         ).pack(side="right", padx=5)
-        
-    def add_invert_entry(self, parent):
-        """Add a row for invert entry with modern styling"""
-        frame = ttk.Frame(parent)
-        frame.pack(fill='x', padx=5, pady=5)
-        
-        # Label and field for angle
-        angle_label = ttk.Label(frame, text="Angle:")
-        angle_label.pack(side='left', padx=(0, 5))
-        
-        angle_entry = ttk.Entry(frame, width=8)
-        angle_entry.pack(side='left', padx=(0, 10))
-        
-        # Label and field for elevation
-        elev_label = ttk.Label(frame, text="Elevation:")
-        elev_label.pack(side='left', padx=(0, 5))
-        
-        elevation_entry = ttk.Entry(frame, width=8)
-        elevation_entry.pack(side='left', padx=(0, 10))
-        
-        # Use a nicer delete button with a proper icon
-        remove_btn = ttk.Button(
-            frame, 
-            text="✕", 
-            bootstyle="danger-outline",
-            width=3,
-            command=lambda: (frame.destroy(), self.invert_entries.remove((angle_entry, elevation_entry)))
-        )
-        remove_btn.pack(side='left', padx=5)
-        
-        self.invert_entries.append((angle_entry, elevation_entry))
 
 if __name__ == "__main__":
     root = ttk.Window(themename="darkly")

@@ -14,6 +14,7 @@ class Structure:
     pipe_length: Optional[float] = None
     pipe_diameter: Optional[float] = None
     pipe_type: Optional[str] = None
+    frame_type: Optional[str] = None
     group_name: Optional[str] = None
     id: Optional[int] = None
     created_at: Optional[datetime] = None

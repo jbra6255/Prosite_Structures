@@ -5,6 +5,9 @@ from datetime import datetime
 from typing import List, Optional, Tuple, Dict, Any
 from models import Structure, StructureGroup
 import hashlib
+import logging
+from logger import AppLogger
+from sqlite3 import Error, IntegrityError, OperationalError, ProgrammingError
 
 class User:
     def __init__(self, id: int, username: str, email: str):
@@ -22,10 +25,12 @@ class Project:
 class DatabaseManager:
     def __init__(self, db_path: str = "structures.db"):
         self.db_path = db_path
+        self.logger = AppLogger().logger
         self.initialize_database()
+        self.logger.info(f"Database initialized: {db_path}")
 
     def initialize_database(self):
-        """Create tables if they don't exist"""
+        """Create tables if they don't exist with improved logging"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -120,9 +125,18 @@ class DatabaseManager:
                     )
                 ''')
                 
-                conn.commit()
+            # After all tables are created, check for the frame_type column
+                cursor.execute("PRAGMA table_info(structures)")
+                columns = [col[1] for col in cursor.fetchall()]
+                
+                # Add frame_type column if it doesn't exist
+                if "frame_type" not in columns:
+                    self.logger.info("Adding frame_type column to structures table")
+                    cursor.execute("ALTER TABLE structures ADD COLUMN frame_type TEXT")
+                    conn.commit()
+        
         except sqlite3.Error as e:
-            print(f"Database initialization error: {e}")
+            self.logger.critical(f"Database initialization failed: {e}", exc_info=True)
             raise
 
     # === User Management Methods ===
@@ -500,7 +514,7 @@ class DatabaseManager:
             return []
 
     def add_structure(self, structure: Structure, project_id: int) -> bool:
-        """Add a new structure to the database"""
+        """Add a new structure to the database with improved error handling"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -510,19 +524,33 @@ class DatabaseManager:
                     INSERT INTO structures (
                         structure_id, structure_type, rim_elevation, invert_out_elevation, 
                         invert_out_angle, vert_drop, upstream_structure_id, pipe_length, 
-                        pipe_diameter, pipe_type, project_id, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        pipe_diameter, pipe_type, frame_type, project_id, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     structure.structure_id, structure.structure_type, structure.rim_elevation,
                     structure.invert_out_elevation, structure.invert_out_angle, structure.vert_drop,
                     structure.upstream_structure_id, structure.pipe_length, structure.pipe_diameter,
-                    structure.pipe_type, project_id, now, now
+                    structure.pipe_type, structure.frame_type, project_id, now, now
                 ))
                 return True
-        except sqlite3.IntegrityError:
+        except IntegrityError as e:
+            # Handle specific constraint violations
+            if "UNIQUE constraint failed" in str(e):
+                self.logger.warning(f"Structure ID '{structure.structure_id}' already exists in project {project_id}")
+                return False
+            elif "FOREIGN KEY constraint failed" in str(e):
+                self.logger.error(f"Foreign key constraint violation: {e}, structure: {structure.structure_id}")
+                return False
+            else:
+                self.logger.error(f"Integrity error when adding structure: {e}", exc_info=True)
+                return False
+        except OperationalError as e:
+            # Handle database operational issues (locked DB, timeout, etc.)
+            self.logger.error(f"Database operational error: {e}", exc_info=True)
             return False
-        except sqlite3.Error as e:
-            print(f"Error adding structure: {e}")
+        except Error as e:
+            # Handle any other SQLite errors
+            self.logger.error(f"Error adding structure {structure.structure_id}: {e}", exc_info=True)
             return False
 
     def update_structure(self, structure: Structure, project_id: int) -> bool:
@@ -543,6 +571,7 @@ class DatabaseManager:
                         pipe_length = ?,
                         pipe_diameter = ?,
                         pipe_type = ?,
+                        frame_type = ?,
                         updated_at = ?
                     WHERE structure_id = ? AND project_id = ?
                 ''', (
@@ -555,6 +584,7 @@ class DatabaseManager:
                     structure.pipe_length,
                     structure.pipe_diameter,
                     structure.pipe_type,
+                    structure.frame_type,
                     now,
                     structure.structure_id,
                     project_id
@@ -680,6 +710,7 @@ class DatabaseManager:
         
     def row_to_structure(self, row) -> Structure:
         """Convert database row to Structure object"""
+
         return Structure(
             id=row[0],
             structure_id=row[1],
@@ -693,6 +724,7 @@ class DatabaseManager:
             pipe_diameter=row[9],
             pipe_type=row[10],
             group_name=row[11],
+            frame_type=row[12],
             created_at=datetime.fromisoformat(row[13]) if row[13] else None,
             updated_at=datetime.fromisoformat(row[14]) if row[14] else None
         )

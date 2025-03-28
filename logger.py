@@ -39,23 +39,3 @@ class AppLogger:
         )
         file_handler.setFormatter(formatter)
         self.logger.addHandler(file_handler)
-    
-    def debug(self, message):
-        """Log a debug message"""
-        self.logger.debug(message)
-    
-    def info(self, message):
-        """Log an info message"""
-        self.logger.info(message)
-    
-    def warning(self, message):
-        """Log a warning message"""
-        self.logger.warning(message)
-    
-    def error(self, message, exc_info=False):
-        """Log an error message, optionally with exception info"""
-        self.logger.error(message, exc_info=exc_info)
-    
-    def critical(self, message, exc_info=True):
-        """Log a critical message with exception info"""
-        self.logger.critical(message, exc_info=exc_info)
