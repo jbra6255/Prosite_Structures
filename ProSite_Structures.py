@@ -383,7 +383,8 @@ class StructureManagementApp:
             text=f"{self.current_project}",
             font=("Helvetica", 14, "bold"),
             foreground="white",
-            background="#007bff"  # Primary color background
+            bootstyle="inverse-primary"
+            # background="#007bff"  # Primary color background
         ).pack(side="left", padx=15, pady=10)
         
         # Navigation buttons on right
@@ -450,7 +451,7 @@ class StructureManagementApp:
         # Configure treeview frame
         treeview_frame.columnconfigure(0, weight=1)
         treeview_frame.rowconfigure(0, weight=1)
-        
+
         # Structure treeview
         columns = ("ID", "Type", "Status")
         self.structure_tree = ttk.Treeview(
@@ -463,7 +464,7 @@ class StructureManagementApp:
         # Define column headings
         for col in columns:
             self.structure_tree.heading(col, text=col)
-            self.structure_tree.column(col, width=80)
+            self.structure_tree.column(col, width=80, anchor="center")
         
         # Add scrollbar
         scrollbar = ttk.Scrollbar(treeview_frame, orient="vertical", command=self.structure_tree.yview)
@@ -601,11 +602,25 @@ class StructureManagementApp:
             canvas.itemconfig(canvas_window, width=event.width)
         
         canvas.bind("<Configure>", adjust_canvas_window)
+
+        # Define the mousewheel functions
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            return "break"  # Prevents event from propagating
+
+        def _bind_mousewheel(event):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))
+            canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))
+
+        def _unbind_mousewheel(event):
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
         
-        # Set initial position of the paned window divider (pixels from left)
-        # Call this after all widgets are loaded and packed
-        self.root.update_idletasks()
-        paned_window.sashpos(0, 300)
+        # Bind the mousewheel functions to details_frame
+        details_frame.bind("<Enter>", _bind_mousewheel)
+        details_frame.bind("<Leave>", _unbind_mousewheel)
         
         # Reports tab
         reports_frame = ttk.Frame(self.notebook, padding=10)
@@ -616,6 +631,10 @@ class StructureManagementApp:
         
         # Load structures for current project
         self.load_structures()
+
+        # Set initial position of the paned window divider
+        self.root.update_idletasks()
+        paned_window.sashpos(0, 300)
 
     def add_structure(self):
         """Add a new structure to the database based on form fields"""
