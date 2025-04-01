@@ -634,6 +634,31 @@ class DatabaseManager:
             print(f"Error creating group: {e}")
             return False
 
+    def safe_date_parse(self, date_value):
+        """Safely parse a date value from the database"""
+        if not date_value:
+            return None
+            
+        # If it's already a datetime object
+        if isinstance(date_value, datetime):
+            return date_value
+            
+        # Try parsing as ISO format
+        try:
+            return datetime.fromisoformat(str(date_value))
+        except ValueError:
+            pass
+            
+        # Try parsing as timestamp (integer)
+        try:
+            if isinstance(date_value, int) or str(date_value).isdigit():
+                return datetime.fromtimestamp(int(date_value))
+        except (ValueError, OverflowError):
+            pass
+            
+        # If all else fails
+        return None
+
     def get_all_groups(self, project_id: int) -> List[StructureGroup]:
         """Get all structure groups for a project"""
         try:
@@ -645,17 +670,28 @@ class DatabaseManager:
                     WHERE project_id = ?
                     ORDER BY name
                 ''', (project_id,))
-                for row in cursor.fetchall():
-                    groups.append(StructureGroup(
+                
+                rows = cursor.fetchall()
+                
+                # Debug: Print row information
+                for row in rows:
+                    print(f"Row: {row}")
+                    print(f"Type of row[3]: {type(row[3])}, Value: {row[3]}")
+                    
+                    # Try getting the id and name at least
+                    group = StructureGroup(
                         id=row[0],
                         name=row[1],
                         description=row[2],
-                        created_at=datetime.fromisoformat(row[3]) if row[3] else None,
-                        updated_at=datetime.fromisoformat(row[4]) if row[4] else None
-                    ))
-            return groups
-        except sqlite3.Error as e:
-            print(f"Error getting groups: {e}")
+                        created_at=None,
+                        updated_at=None
+                    )
+                    groups.append(group)
+                    
+                return groups
+        except Exception as e:
+            self.logger.error(f"Error getting groups: {e}", exc_info=True)
+            print(f"Exception in get_all_groups: {e}")
             return []
 
     def add_structures_to_group(self, group_name: str, structure_ids: List[str], project_id: int) -> bool:
@@ -710,7 +746,7 @@ class DatabaseManager:
         
     def row_to_structure(self, row) -> Structure:
         """Convert database row to Structure object"""
-
+        
         return Structure(
             id=row[0],
             structure_id=row[1],
@@ -725,8 +761,8 @@ class DatabaseManager:
             pipe_type=row[10],
             group_name=row[11],
             frame_type=row[12],
-            created_at=datetime.fromisoformat(row[13]) if row[13] else None,
-            updated_at=datetime.fromisoformat(row[14]) if row[14] else None
+            created_at=self.safe_date_parse(row[13]),
+            updated_at=self.safe_date_parse(row[14])
         )
 
     def delete_group(self, group_name: str, project_id: int) -> bool:

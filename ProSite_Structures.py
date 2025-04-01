@@ -372,6 +372,13 @@ class StructureManagementApp:
         # Clear existing widgets
         for widget in self.root.winfo_children():
             widget.destroy()
+
+        # Create menu bar
+        self.create_menu_bar()
+
+        # Create a modern layout with top navbar
+        navbar = ttk.Frame(self.root, bootstyle="primary")
+        navbar.pack(fill="x")
         
         # Create a modern layout with top navbar
         navbar = ttk.Frame(self.root, bootstyle="primary")
@@ -635,6 +642,693 @@ class StructureManagementApp:
         # Set initial position of the paned window divider
         self.root.update_idletasks()
         paned_window.sashpos(0, 300)
+
+    def create_menu_bar(self):
+        """Create the application menu bar"""
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="New Structure", command=self.add_structure)
+        file_menu.add_command(label="Import Structures...", command=self.import_structures)
+        file_menu.add_command(label="Export Structures...", command=self.export_structures)
+        file_menu.add_separator()
+        file_menu.add_command(label="Generate Report", command=self.generate_report)
+        file_menu.add_separator()
+        file_menu.add_command(label="Close Project", command=self.show_project_selection)
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        
+        # Edit menu
+        edit_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Edit", menu=edit_menu)
+        edit_menu.add_command(label="Delete Selected Structure", command=self.delete_selected_structure)
+        edit_menu.add_separator()
+        edit_menu.add_command(label="Create Group", command=self.create_group)
+        edit_menu.add_command(label="Manage Groups", command=self.manage_groups)
+        edit_menu.add_separator()
+        edit_menu.add_command(label="Find Structure...", command=self.find_structure)
+        
+        # Settings menu
+        settings_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Settings", menu=settings_menu)
+        
+        # Theme submenu
+        theme_menu = tk.Menu(settings_menu, tearoff=0)
+        settings_menu.add_cascade(label="Theme", menu=theme_menu)
+        themes = ["darkly", "cosmo", "flatly", "litera", "minty", "lumen", "sandstone", "yeti"]
+        for theme in themes:
+            theme_menu.add_command(label=theme.capitalize(), command=lambda t=theme: self.change_theme(t))
+        
+        settings_menu.add_separator()
+        settings_menu.add_command(label="User Preferences", command=self.show_preferences)
+        settings_menu.add_command(label="Project Settings", command=self.show_project_settings)
+        
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="Documentation", command=self.show_documentation)
+        help_menu.add_command(label="About", command=self.show_about)
+
+    def import_structures(self):
+        """Import structures from a file"""
+        Messagebox.show_info("Structure import functionality coming soon", "Feature Not Implemented")
+        
+    def export_structures(self):
+        """Export structures to a file"""
+        Messagebox.show_info("Structure export functionality coming soon", "Feature Not Implemented")
+        
+    
+    def manage_groups(self):
+        """Show the group management dialog"""
+        try:
+            # Get project ID
+            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            if not project:
+                Messagebox.show_error("Could not find current project", "Project Error")
+                return
+                
+            # Get all groups for this project
+            groups = self.db.get_all_groups(project.id)
+            
+            # Create dialog window
+            group_window = ttk.Toplevel(self.root)
+            group_window.title("Manage Structure Groups")
+            group_window.geometry("700x500")
+            
+            # Main container with padding
+            main_frame = ttk.Frame(group_window, padding=20)
+            main_frame.pack(fill="both", expand=True)
+            
+            # Title
+            ttk.Label(
+                main_frame, 
+                text="Structure Groups", 
+                font=("Helvetica", 16, "bold"),
+                bootstyle="primary"
+            ).pack(anchor="w", pady=(0, 20))
+            
+            # Groups list frame
+            list_frame = ttk.Labelframe(main_frame, text="Available Groups")
+            list_frame.pack(fill="both", expand=True, pady=(0, 20))
+            
+            # Create groups treeview
+            columns = ("Name", "Description", "Count")
+            group_tree = ttk.Treeview(
+                list_frame,
+                columns=columns,
+                show="headings",
+                height=10
+            )
+            
+            # Define column headings
+            for col in columns:
+                group_tree.heading(col, text=col)
+                
+            group_tree.column("Name", width=150)
+            group_tree.column("Description", width=300)
+            group_tree.column("Count", width=80, anchor="center")
+            
+            # Add a scrollbar
+            scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=group_tree.yview)
+            group_tree.configure(yscrollcommand=scrollbar.set)
+            
+            # Pack the treeview and scrollbar
+            group_tree.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+            scrollbar.pack(side="right", fill="y", pady=10)
+            
+            # Populate groups
+            for group in groups:
+                # Get count of structures in this group
+                structures = self.db.get_group_structures(group.name, project.id)
+                group_tree.insert(
+                    "", 
+                    "end", 
+                    values=(group.name, group.description or "", len(structures))
+                )
+            
+            # Button frame
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill="x")
+            
+            # Buttons for group operations
+            ttk.Button(
+                button_frame,
+                text="New Group",
+                bootstyle="success",
+                command=lambda: self.create_new_group_dialog(group_tree, project.id)
+            ).pack(side="left", padx=5)
+            
+            ttk.Button(
+                button_frame,
+                text="View Structures",
+                bootstyle="info",
+                command=lambda: self.view_group_structures(group_tree, project.id)
+            ).pack(side="left", padx=5)
+            
+            ttk.Button(
+                button_frame,
+                text="Delete Group",
+                bootstyle="danger",
+                command=lambda: self.delete_group_dialog(group_tree, project.id)
+            ).pack(side="left", padx=5)
+            
+            ttk.Button(
+                button_frame,
+                text="Close",
+                bootstyle="secondary",
+                command=group_window.destroy
+            ).pack(side="right", padx=5)
+            
+        except Exception as e:
+            self.logger.error(f"Group management error: {e}", exc_info=True)
+            Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+            
+    def create_new_group_dialog(self, tree_view, project_id):
+        """Dialog for creating a new group"""
+        # Get group details
+        group_name = dialogs.Querybox.get_string(
+            "Enter group name:",
+            "New Group"
+        )
+        
+        if not group_name:
+            return
+            
+        description = dialogs.Querybox.get_string(
+            "Enter description (optional):",
+            "New Group"
+        )
+        
+        # Create group
+        success = self.db.create_group(group_name, project_id, description or "")
+        if success:
+            Messagebox.show_info(f"Group '{group_name}' created successfully", "Success")
+            
+            # Add to treeview
+            tree_view.insert(
+                "",
+                "end",
+                values=(group_name, description or "", 0)
+            )
+        else:
+            Messagebox.show_error(
+                "Failed to create group. Group name may already exist.",
+                "Database Error"
+            )
+            
+    def view_group_structures(self, tree_view, project_id):
+        """View structures in the selected group"""
+        selection = tree_view.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a group", "No Selection")
+            return
+            
+        group_name = tree_view.item(selection[0], "values")[0]
+        
+        # Get structures in this group
+        structures = self.db.get_group_structures(group_name, project_id)
+        if not structures:
+            Messagebox.show_info(f"No structures in group '{group_name}'", "Empty Group")
+            return
+            
+        # Create dialog window
+        view_window = ttk.Toplevel(self.root)
+        view_window.title(f"Group: {group_name}")
+        view_window.geometry("700x500")
+        
+        # Main container with padding
+        main_frame = ttk.Frame(view_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text=f"Structures in Group: {group_name}", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(anchor="w", pady=(0, 20))
+        
+        # Structures list
+        columns = ("ID", "Type", "Rim Elevation", "Invert Out", "Total Drop")
+        structure_tree = ttk.Treeview(
+            main_frame,
+            columns=columns,
+            show="headings",
+            height=15
+        )
+        
+        # Define column headings
+        for col in columns:
+            structure_tree.heading(col, text=col)
+            
+        structure_tree.column("ID", width=100)
+        structure_tree.column("Type", width=80)
+        structure_tree.column("Rim Elevation", width=120, anchor="e")
+        structure_tree.column("Invert Out", width=120, anchor="e")
+        structure_tree.column("Total Drop", width=120, anchor="e")
+        
+        # Add a scrollbar
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=structure_tree.yview)
+        structure_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack the treeview and scrollbar
+        structure_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Populate structures
+        for structure in structures:
+            structure_tree.insert(
+                "",
+                "end",
+                values=(
+                    structure.structure_id,
+                    structure.structure_type,
+                    f"{structure.rim_elevation:.2f}",
+                    f"{structure.invert_out_elevation:.2f}",
+                    f"{structure.total_drop:.2f}"
+                )
+            )
+        
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        # Close button
+        ttk.Button(
+            button_frame,
+            text="Close",
+            bootstyle="secondary",
+            command=view_window.destroy
+        ).pack(side="right")
+        
+    def delete_group_dialog(self, tree_view, project_id):
+        """Delete the selected group"""
+        selection = tree_view.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a group to delete", "No Selection")
+            return
+            
+        group_name = tree_view.item(selection[0], "values")[0]
+        
+        # Confirm deletion
+        confirm = Messagebox.yesno(
+            f"Are you sure you want to delete group '{group_name}'?\n\nThis will not delete the structures in the group.",
+            "Confirm Deletion"
+        )
+        
+        if not confirm:
+            return
+            
+        # Delete group
+        success = self.db.delete_group(group_name, project_id)
+        if success:
+            Messagebox.show_info(f"Group '{group_name}' deleted successfully", "Success")
+            # Remove from treeview
+            tree_view.delete(selection[0])
+        else:
+            Messagebox.show_error(f"Failed to delete group '{group_name}'", "Database Error")
+        
+    def find_structure(self):
+        """Show the structure search dialog"""
+        search_term = dialogs.Querybox.get_string(
+            "Enter structure ID or partial ID to search:", 
+            "Find Structure"
+        )
+        
+        if not search_term:
+            return
+            
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            Messagebox.show_error("Could not find current project", "Project Error")
+            return
+            
+        # Get all structures
+        structures = self.db.get_all_structures(project.id)
+        
+        # Filter structures by search term
+        matches = []
+        for structure in structures:
+            if search_term.lower() in structure.structure_id.lower():
+                matches.append(structure)
+        
+        if not matches:
+            Messagebox.show_info(f"No structures matching '{search_term}' found", "No Results")
+            return
+            
+        # If only one match, select it in the treeview
+        if len(matches) == 1:
+            self.select_structure_in_tree(matches[0].structure_id)
+            return
+            
+        # If multiple matches, show results dialog
+        results_window = ttk.Toplevel(self.root)
+        results_window.title("Search Results")
+        results_window.geometry("500x400")
+        
+        # Main container with padding
+        main_frame = ttk.Frame(results_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text=f"Search Results: {search_term}", 
+            font=("Helvetica", 14, "bold"),
+            bootstyle="primary"
+        ).pack(anchor="w", pady=(0, 20))
+        
+        # Results list
+        columns = ("ID", "Type")
+        results_tree = ttk.Treeview(
+            main_frame,
+            columns=columns,
+            show="headings",
+            height=10
+        )
+        
+        # Define column headings
+        for col in columns:
+            results_tree.heading(col, text=col)
+            
+        results_tree.column("ID", width=150)
+        results_tree.column("Type", width=100)
+        
+        # Add a scrollbar
+        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=results_tree.yview)
+        results_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack the treeview and scrollbar
+        results_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Populate results
+        for structure in matches:
+            results_tree.insert(
+                "",
+                "end",
+                values=(structure.structure_id, structure.structure_type)
+            )
+        
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        # Select button
+        ttk.Button(
+            button_frame,
+            text="Select",
+            bootstyle="primary",
+            command=lambda: self.select_from_results(results_tree, results_window)
+        ).pack(side="left")
+        
+        # Close button
+        ttk.Button(
+            button_frame,
+            text="Close",
+            bootstyle="secondary",
+            command=results_window.destroy
+        ).pack(side="right")
+        
+    def select_from_results(self, results_tree, window):
+        """Select a structure from search results"""
+        selection = results_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a structure", "No Selection")
+            return
+            
+        structure_id = results_tree.item(selection[0], "values")[0]
+        window.destroy()
+        self.select_structure_in_tree(structure_id)
+        
+    def select_structure_in_tree(self, structure_id):
+        """Find and select a structure in the main treeview"""
+        for item in self.structure_tree.get_children():
+            if self.structure_tree.item(item, "values")[0] == structure_id:
+                # Clear previous selection
+                self.structure_tree.selection_set("")
+                # Select the found item
+                self.structure_tree.selection_set(item)
+                # Ensure it's visible
+                self.structure_tree.see(item)
+                # Show details
+                self.show_structure_details(None)
+                return
+        
+    def change_theme(self, theme_name):
+        """Change the application theme"""
+        try:
+            style = ttk.Style()
+            current_theme = style.theme.name
+            
+            if current_theme == theme_name:
+                return  # Already using this theme
+                
+            style.theme_use(theme_name)
+            
+            # Save the theme preference for the user (could be stored in a user_preferences table)
+            self.logger.info(f"Theme changed to {theme_name}")
+            
+            # You could add a small notification or visual confirmation
+            theme_toast = ttk.Toplevel(self.root)
+            theme_toast.overrideredirect(True)  # No window decorations
+            theme_toast.attributes('-topmost', True)  # Stay on top
+            
+            # Position at the bottom right of the main window
+            x = self.root.winfo_x() + self.root.winfo_width() - 200
+            y = self.root.winfo_y() + self.root.winfo_height() - 80
+            theme_toast.geometry(f"200x60+{x}+{y}")
+            
+            # Toast content
+            toast_frame = ttk.Frame(theme_toast, padding=10)
+            toast_frame.pack(fill="both", expand=True)
+            
+            ttk.Label(
+                toast_frame,
+                text=f"Theme: {theme_name.capitalize()}",
+                font=("Helvetica", 12, "bold")
+            ).pack(pady=(0, 5))
+            
+            # Auto-close after 2 seconds
+            theme_toast.after(2000, theme_toast.destroy)
+            
+        except Exception as e:
+            self.logger.error(f"Theme change error: {e}", exc_info=True)
+        
+    def show_preferences(self):
+        """Show the user preferences dialog"""
+        pref_window = ttk.Toplevel(self.root)
+        pref_window.title("User Preferences")
+        pref_window.geometry("500x400")
+        
+        # Main container with padding
+        main_frame = ttk.Frame(pref_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="User Preferences", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(anchor="w", pady=(0, 20))
+        
+        # Create a notebook for preference categories
+        pref_notebook = ttk.Notebook(main_frame)
+        pref_notebook.pack(fill="both", expand=True)
+        
+        # General preferences tab
+        general_frame = ttk.Frame(pref_notebook, padding=10)
+        pref_notebook.add(general_frame, text="General")
+        
+        # Display preferences tab
+        display_frame = ttk.Frame(pref_notebook, padding=10)
+        pref_notebook.add(display_frame, text="Display")
+        
+        # Units preferences tab
+        units_frame = ttk.Frame(pref_notebook, padding=10)
+        pref_notebook.add(units_frame, text="Units")
+        
+        # General preferences content
+        ttk.Label(general_frame, text="Default Project:").grid(row=0, column=0, sticky="w", padx=5, pady=10)
+        default_project = ttk.Combobox(general_frame, state="readonly")
+        default_project.grid(row=0, column=1, sticky="ew", padx=5, pady=10)
+        
+        # Get user's projects for the dropdown
+        projects = self.db.get_user_projects(self.current_user.id)
+        project_names = [p.name for p in projects['owned']] + [p.name for p in projects['shared']]
+        default_project['values'] = project_names
+        
+        ttk.Label(general_frame, text="Auto-save interval (minutes):").grid(row=1, column=0, sticky="w", padx=5, pady=10)
+        autosave_spin = ttk.Spinbox(general_frame, from_=1, to=60, width=5)
+        autosave_spin.set(5)  # Default value
+        autosave_spin.grid(row=1, column=1, sticky="w", padx=5, pady=10)
+        
+        # Create and configure a switch for auto-backup
+        ttk.Label(general_frame, text="Auto-backup:").grid(row=2, column=0, sticky="w", padx=5, pady=10)
+        auto_backup_var = tk.BooleanVar(value=True)
+        auto_backup_switch = ttk.Checkbutton(
+            general_frame, 
+            bootstyle="round-toggle",
+            variable=auto_backup_var
+        )
+        auto_backup_switch.grid(row=2, column=1, sticky="w", padx=5, pady=10)
+        
+        # Display preferences content
+        theme_label = ttk.Label(display_frame, text="Theme:")
+        theme_label.grid(row=0, column=0, sticky="w", padx=5, pady=10)
+        
+        # Theme dropdown
+        theme_combo = ttk.Combobox(display_frame, state="readonly")
+        theme_combo['values'] = ["darkly", "cosmo", "flatly", "litera", "minty", "lumen", "sandstone", "yeti"]
+        theme_combo.current(0)  # Set default
+        theme_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=10)
+        
+        # Font size
+        ttk.Label(display_frame, text="Font Size:").grid(row=1, column=0, sticky="w", padx=5, pady=10)
+        font_size_combo = ttk.Combobox(display_frame, state="readonly")
+        font_size_combo['values'] = ["Small", "Medium", "Large"]
+        font_size_combo.current(1)  # Medium by default
+        font_size_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=10)
+        
+        # Display density
+        ttk.Label(display_frame, text="Display Density:").grid(row=2, column=0, sticky="w", padx=5, pady=10)
+        density_combo = ttk.Combobox(display_frame, state="readonly")
+        density_combo['values'] = ["Compact", "Comfortable", "Spacious"]
+        density_combo.current(1)  # Comfortable by default
+        density_combo.grid(row=2, column=1, sticky="ew", padx=5, pady=10)
+        
+        # Units preferences content
+        ttk.Label(units_frame, text="Length:").grid(row=0, column=0, sticky="w", padx=5, pady=10)
+        length_combo = ttk.Combobox(units_frame, state="readonly")
+        length_combo['values'] = ["Feet", "Meters"]
+        length_combo.current(0)  # Feet by default
+        length_combo.grid(row=0, column=1, sticky="ew", padx=5, pady=10)
+        
+        ttk.Label(units_frame, text="Diameter:").grid(row=1, column=0, sticky="w", padx=5, pady=10)
+        diameter_combo = ttk.Combobox(units_frame, state="readonly")
+        diameter_combo['values'] = ["Inches", "Millimeters"]
+        diameter_combo.current(0)  # Inches by default
+        diameter_combo.grid(row=1, column=1, sticky="ew", padx=5, pady=10)
+        
+        ttk.Label(units_frame, text="Elevation:").grid(row=2, column=0, sticky="w", padx=5, pady=10)
+        elevation_combo = ttk.Combobox(units_frame, state="readonly")
+        elevation_combo['values'] = ["Feet", "Meters"]
+        elevation_combo.current(0)  # Feet by default
+        elevation_combo.grid(row=2, column=1, sticky="ew", padx=5, pady=10)
+        
+        # Preview changes option
+        preview_var = tk.BooleanVar(value=True)
+        preview_check = ttk.Checkbutton(
+            main_frame, 
+            text="Preview changes",
+            variable=preview_var
+        )
+        preview_check.pack(anchor="w", pady=(20, 5))
+        
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(10, 0))
+        
+        # Save button
+        ttk.Button(
+            button_frame,
+            text="Save Preferences",
+            bootstyle="primary",
+            command=lambda: self.save_preferences(
+                default_project.get(),
+                autosave_spin.get(),
+                auto_backup_var.get(),
+                theme_combo.get(),
+                font_size_combo.get(),
+                density_combo.get(),
+                length_combo.get(),
+                diameter_combo.get(),
+                elevation_combo.get(),
+                pref_window
+            )
+        ).pack(side="left")
+        
+        # Cancel button
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=pref_window.destroy
+        ).pack(side="right")
+        
+    def save_preferences(self, default_project, autosave, auto_backup, 
+                    theme, font_size, density, length_unit, 
+                    diameter_unit, elevation_unit, window):
+        """Save user preferences (placeholder for now)"""
+        # In a full implementation, you would save these to a database or config file
+        self.logger.info(f"Preferences saved: theme={theme}, units={length_unit}/{diameter_unit}/{elevation_unit}")
+        
+        # Apply theme immediately
+        self.change_theme(theme)
+        
+        # Close the preferences window
+        window.destroy()
+        
+        Messagebox.show_info("Preferences saved successfully", "Preferences")
+        
+    def show_project_settings(self):
+        """Show the project settings dialog"""
+        Messagebox.show_info("Project settings dialog coming soon", "Feature Not Implemented")
+        
+    def show_documentation(self):
+        """Show the application documentation"""
+        Messagebox.show_info("Documentation coming soon", "Feature Not Implemented")
+        
+    def show_about(self):
+        """Show the about dialog"""
+        about_window = ttk.Toplevel(self.root)
+        about_window.title("About Structure Management System")
+        about_window.geometry("400x300")
+        
+        # Add padding around the entire content
+        main_frame = ttk.Frame(about_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # App logo or icon could go here
+        
+        # Title with primary color
+        ttk.Label(
+            main_frame, 
+            text="Structure Management System", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 10))
+        
+        ttk.Label(
+            main_frame, 
+            text="Version 1.0", 
+            font=("Helvetica", 12)
+        ).pack(pady=(0, 20))
+        
+        ttk.Label(
+            main_frame, 
+            text="A system for managing infrastructure structures\nand their relationships.", 
+            justify="center"
+        ).pack(pady=(0, 20))
+        
+        ttk.Label(
+            main_frame, 
+            text="© 2025 Your Name/Company", 
+            font=("Helvetica", 10),
+            bootstyle="secondary"
+        ).pack(pady=(10, 0))
+        
+        # Close button
+        ttk.Button(
+            main_frame, 
+            text="Close", 
+            bootstyle="secondary",
+            command=about_window.destroy
+        ).pack(pady=(20, 0))
 
     def add_structure(self):
         """Add a new structure to the database based on form fields"""
