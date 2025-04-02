@@ -460,7 +460,7 @@ class StructureManagementApp:
         treeview_frame.rowconfigure(0, weight=1)
 
         # Structure treeview
-        columns = ("ID", "Type", "Status")
+        columns = ("ID", "TYPE", "RIM ELEVATION", "INV. IN", "INV. OUT", "DESCRIPTION")
         self.structure_tree = ttk.Treeview(
             treeview_frame, 
             columns=columns,
@@ -471,7 +471,14 @@ class StructureManagementApp:
         # Define column headings
         for col in columns:
             self.structure_tree.heading(col, text=col)
-            self.structure_tree.column(col, width=80, anchor="center")
+
+        # Set column widths and alignment
+        self.structure_tree.column("ID", width=80, anchor="w")
+        self.structure_tree.column("TYPE", width=60, anchor="center")
+        self.structure_tree.column("RIM ELEVATION", width=90, anchor="e")
+        self.structure_tree.column("INV. IN", width=80, anchor="e")
+        self.structure_tree.column("INV. OUT", width=80, anchor="e")
+        self.structure_tree.column("DESCRIPTION", width=200, anchor="w")    
         
         # Add scrollbar
         scrollbar = ttk.Scrollbar(treeview_frame, orient="vertical", command=self.structure_tree.yview)
@@ -530,8 +537,8 @@ class StructureManagementApp:
         # Add all form fields with proper alignment
         row = 0
         labels = ['Structure ID:', 'Structure Type:', 'Rim Elevation: ', 'Invert Out Elevation: ', 
-                'Frame Type:', 'Drop (VF):', 'Upstream Structure:', 'Pipe Length:', 
-                'Pipe Diameter:', 'Pipe Type:']
+        'Frame Type:', 'Drop (VF):', 'Upstream Structure:', 'Pipe Length:', 
+        'Pipe Diameter:', 'Pipe Type:', 'Description:']
         
         self.entries: Dict[str, ttk.Entry] = {}
         
@@ -1371,6 +1378,7 @@ class StructureManagementApp:
             upstream_structure_id = self.entries['Upstream Structure:'].get() or None
             pipe_type = self.entries['Pipe Type:'].get() or None
             frame_type = self.entries['Frame Type:'].get() or None
+            description = self.entries['Description:'].get() or None
             
             # Additional validation
             if not rim_elevation or not invert_out_elevation:
@@ -1392,7 +1400,8 @@ class StructureManagementApp:
                 pipe_length=pipe_length,
                 pipe_diameter=pipe_diameter,
                 pipe_type=pipe_type,
-                frame_type=frame_type
+                frame_type=frame_type,
+                description=description
             )
             
             # Add to database
@@ -1513,9 +1522,12 @@ class StructureManagementApp:
             self.entries['Pipe Type:'].insert(0, structure.pipe_type)
         if structure.frame_type:
             self.entries['Frame Type:'].insert(0, structure.frame_type)
+        if structure.description:
+            self.entries['Description:'].insert(0, structure.description)
+
 
     def load_structures(self):
-        """Load structures from database into treeview"""
+        """Load structures from database into treeview with additional columns"""
         # Clear existing items in the treeview
         for item in self.structure_tree.get_children():
             self.structure_tree.delete(item)
@@ -1528,19 +1540,30 @@ class StructureManagementApp:
         # Get structures for this project
         structures = self.db.get_all_structures(project.id)
         
-        # Add to treeview with improved styling
+        # Add to treeview with improved styling and additional columns
         for structure in structures:
-            # Determine status based on structure properties
-            status = "Active"
+            # For invert in, you'll need to get the connecting structures
+            invert_in_values = self.get_invert_in_values(structure.structure_id, project.id)
+            invert_in_text = ", ".join([f"{val:.2f}" for val in invert_in_values]) if invert_in_values else "—"
             
-            # Add to treeview with ID, Type, and Status
+            # Format values for display
+            rim_elevation = f"{structure.rim_elevation:.2f}" if structure.rim_elevation is not None else "—"
+            invert_out = f"{structure.invert_out_elevation:.2f}" if structure.invert_out_elevation is not None else "—"
+            
+            # Use the description field directly
+            description = structure.pipe_type or ""
+            
+            # Add to treeview with ID, Type, Rim Elevation, Inv. In, Inv. Out, Description
             self.structure_tree.insert(
                 "", 
                 "end", 
                 values=(
                     structure.structure_id, 
                     structure.structure_type, 
-                    status
+                    rim_elevation,
+                    invert_in_text,
+                    invert_out,
+                    description
                 )
             )
 
@@ -1591,6 +1614,7 @@ class StructureManagementApp:
             upstream_structure_id = self.entries['Upstream Structure:'].get() or None
             pipe_type = self.entries['Pipe Type:'].get() or None
             frame_type = self.entries['Frame Type:'].get() or None
+            description = self.entries['Description:'].get() or None
             
             # Update structure object
             updated_structure = Structure(
@@ -1604,6 +1628,8 @@ class StructureManagementApp:
                 pipe_length=pipe_length,
                 pipe_diameter=pipe_diameter,
                 pipe_type=pipe_type,
+                frame_type=frame_type,
+                description=description,
                 group_name=existing_structure.group_name  # Preserve existing group
             )
             
@@ -1626,6 +1652,20 @@ class StructureManagementApp:
                 
         except Exception as e:
             Messagebox.show_error(f"An error occurred: {str(e)}", "System Error")
+
+    def get_invert_in_values(self, structure_id, project_id):
+        """Get all invert in elevations for a structure by finding upstream structures"""
+        invert_in_values = []
+        
+        # Get all structures that have this structure as their downstream connection
+        upstream_structures = self.db.get_upstream_structures(structure_id, project_id)
+        
+        # Get their invert out elevations (which flow into this structure)
+        for upstream in upstream_structures:
+            if upstream.invert_out_elevation is not None:
+                invert_in_values.append(upstream.invert_out_elevation)
+        
+        return invert_in_values
 
     def create_group(self):
         """Create a new structure group and add selected structures to it"""
