@@ -474,12 +474,12 @@ class StructureManagementApp:
             self.structure_tree.heading(col, text=col)
 
         # Set column widths and alignment
-        self.structure_tree.column("ID", width=80, anchor="w")
+        self.structure_tree.column("ID", width=80, anchor="center")
         self.structure_tree.column("TYPE", width=60, anchor="center")
-        self.structure_tree.column("RIM ELEVATION", width=90, anchor="e")
-        self.structure_tree.column("INV. IN", width=80, anchor="e")
-        self.structure_tree.column("INV. OUT", width=80, anchor="e")
-        self.structure_tree.column("DESCRIPTION", width=200, anchor="w")    
+        self.structure_tree.column("RIM ELEVATION", width=90, anchor="center")
+        self.structure_tree.column("INV. IN", width=80, anchor="center")
+        self.structure_tree.column("INV. OUT", width=80, anchor="center")
+        self.structure_tree.column("DESCRIPTION", width=200, anchor="center")    
         
         # Add scrollbar
         scrollbar = ttk.Scrollbar(treeview_frame, orient="vertical", command=self.structure_tree.yview)
