@@ -6,6 +6,7 @@ import ttkbootstrap.dialogs as dialogs
 from database_manager import DatabaseManager
 from typing import List, Dict, Optional
 from models import Structure, StructureGroup
+print("DEBUG - Structure fields:", [field for field in dir(Structure) if not field.startswith('__')])
 from logger import AppLogger
 import hashlib
 
@@ -1525,6 +1526,9 @@ class StructureManagementApp:
         if structure.description:
             self.entries['Description:'].insert(0, structure.description)
 
+        # Check if the structure has a description attribute and if it has a value
+        if hasattr(structure, 'description') and structure.description:
+            self.entries['Description:'].insert(0, structure.description)
 
     def load_structures(self):
         """Load structures from database into treeview with additional columns"""

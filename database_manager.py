@@ -1,3 +1,5 @@
+import models
+print("Models module location:", models.__file__)
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import sqlite3
@@ -87,6 +89,8 @@ class DatabaseManager:
                         pipe_length REAL,
                         pipe_diameter REAL,
                         pipe_type TEXT,
+                        frame_type TEXT,
+                        description TEXT,
                         group_name TEXT,
                         project_id INTEGER NOT NULL,
                         created_at TIMESTAMP NOT NULL,
@@ -124,8 +128,19 @@ class DatabaseManager:
                         PRIMARY KEY (group_id, structure_id, project_id)
                     )
                 ''')
+
+                # After all tables are created, check for the description column
+                cursor.execute("PRAGMA table_info(structures)")
+                columns = [col[1] for col in cursor.fetchall()]
                 
-            # After all tables are created, check for the frame_type column
+                # Add description column if it doesn't exist
+                if "description" not in columns:
+                    self.logger.info("Adding description column to structures table")
+                    cursor.execute("ALTER TABLE structures ADD COLUMN description TEXT")
+                    conn.commit()
+    
+                
+                # After all tables are created, check for the frame_type column
                 cursor.execute("PRAGMA table_info(structures)")
                 columns = [col[1] for col in cursor.fetchall()]
                 
@@ -495,6 +510,38 @@ class DatabaseManager:
             print(f"Error getting structure: {e}")
             return None
 
+    def get_upstream_structures(self, structure_id: str, project_id: int) -> List[Structure]:
+        """
+        Get all structures that have the specified structure as their downstream connection
+        (i.e., structures that flow into this one).
+        
+        Args:
+            structure_id: The ID of the downstream structure
+            project_id: The project ID
+            
+        Returns:
+            List of Structure objects that have their upstream_structure_id set to the given structure_id
+        """
+        try:
+            structures = []
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Find structures where upstream_structure_id equals the given structure_id
+                cursor.execute('''
+                    SELECT * FROM structures 
+                    WHERE upstream_structure_id = ? AND project_id = ?
+                    ORDER BY structure_id
+                ''', (structure_id, project_id))
+                
+                for row in cursor.fetchall():
+                    structures.append(self.row_to_structure(row))
+                    
+            return structures
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting upstream structures: {e}", exc_info=True)
+            return []
+
     def get_all_structures(self, project_id: int) -> List[Structure]:
         """Retrieve all structures for a project"""
         try:
@@ -514,7 +561,6 @@ class DatabaseManager:
             return []
 
     def add_structure(self, structure: Structure, project_id: int) -> bool:
-        """Add a new structure to the database with improved error handling"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -524,13 +570,13 @@ class DatabaseManager:
                     INSERT INTO structures (
                         structure_id, structure_type, rim_elevation, invert_out_elevation, 
                         invert_out_angle, vert_drop, upstream_structure_id, pipe_length, 
-                        pipe_diameter, pipe_type, frame_type, project_id, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        pipe_diameter, pipe_type, frame_type, description, project_id, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     structure.structure_id, structure.structure_type, structure.rim_elevation,
                     structure.invert_out_elevation, structure.invert_out_angle, structure.vert_drop,
                     structure.upstream_structure_id, structure.pipe_length, structure.pipe_diameter,
-                    structure.pipe_type, structure.frame_type, project_id, now, now
+                    structure.pipe_type, structure.frame_type, structure.description, project_id, now, now
                 ))
                 return True
         except IntegrityError as e:
@@ -552,6 +598,8 @@ class DatabaseManager:
             # Handle any other SQLite errors
             self.logger.error(f"Error adding structure {structure.structure_id}: {e}", exc_info=True)
             return False
+        
+        self.load_structures()
 
     def update_structure(self, structure: Structure, project_id: int) -> bool:
         """Update an existing structure in the database"""
@@ -572,6 +620,7 @@ class DatabaseManager:
                         pipe_diameter = ?,
                         pipe_type = ?,
                         frame_type = ?,
+                        description = ?,
                         updated_at = ?
                     WHERE structure_id = ? AND project_id = ?
                 ''', (
@@ -585,6 +634,7 @@ class DatabaseManager:
                     structure.pipe_diameter,
                     structure.pipe_type,
                     structure.frame_type,
+                    structure.description,
                     now,
                     structure.structure_id,
                     project_id
@@ -593,6 +643,8 @@ class DatabaseManager:
         except sqlite3.Error as e:
             print(f"Error updating structure: {e}")
             return False
+        
+        self.load_structures()
 
     def delete_structure(self, structure_id: str, project_id: int) -> bool:
         """Delete a structure from the database"""
@@ -747,7 +799,8 @@ class DatabaseManager:
     def row_to_structure(self, row) -> Structure:
         """Convert database row to Structure object"""
         
-        return Structure(
+        # Create structure without the problematic description field
+        structure = Structure(
             id=row[0],
             structure_id=row[1],
             structure_type=row[2],
@@ -759,11 +812,23 @@ class DatabaseManager:
             pipe_length=row[8],
             pipe_diameter=row[9],
             pipe_type=row[10],
-            group_name=row[11],
-            frame_type=row[12],
-            created_at=self.safe_date_parse(row[13]),
-            updated_at=self.safe_date_parse(row[14])
+            frame_type=row[11],
+            description=row[12] if len(row) > 12 else None,  # Explicitly handle description
+            group_name=row[13] if len(row) > 13 else None,
+            created_at=self.safe_date_parse(row[14] if len(row) > 14 else None),
+            updated_at=self.safe_date_parse(row[15] if len(row) > 15 else None)
         )
+        
+        # Try to set description separately if it exists
+        try:
+            # Check if description field exists in the row
+            if len(row) > 15 and row[15] is not None:
+                structure.description = row[15]
+        except AttributeError:
+            # If the structure doesn't have a description attribute, log it
+            self.logger.warning("Structure class does not have a description attribute")
+        
+        return structure
 
     def delete_group(self, group_name: str, project_id: int) -> bool:
         """Delete a group and all its memberships"""
