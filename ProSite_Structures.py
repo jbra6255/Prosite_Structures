@@ -1,14 +1,17 @@
 import tkinter as tk
 import ttkbootstrap as ttk
+from datetime import datetime
 from ttkbootstrap.constants import *
 from ttkbootstrap.dialogs import Messagebox
 import ttkbootstrap.dialogs as dialogs
 from database_manager import DatabaseManager
 from typing import List, Dict, Optional
-from models import Structure, StructureGroup
-print("DEBUG - Structure fields:", [field for field in dir(Structure) if not field.startswith('__')])
+from models import Structure, StructureGroup, StructureComponent
 from logger import AppLogger
-import hashlib
+
+# Debug output - can be removed in production
+print("DEBUG - Structure fields:", [field for field in dir(Structure) if not field.startswith('__')])
+
 
 class StructureManagementApp:
     def __init__(self, root):
@@ -651,6 +654,13 @@ class StructureManagementApp:
         self.root.update_idletasks()
         paned_window.sashpos(0, 300)
 
+         # Add a new tab for component tracking
+        self.components_frame = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.components_frame, text='Component Tracking')
+        
+        # Configure the components frame
+        self.setup_components_tab()
+
     def create_menu_bar(self):
         """Create the application menu bar"""
         menubar = tk.Menu(self.root)
@@ -698,6 +708,686 @@ class StructureManagementApp:
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Documentation", command=self.show_documentation)
         help_menu.add_command(label="About", command=self.show_about)
+
+    def setup_components_tab(self):
+        """Set up the component tracking tab"""
+        # Configure components frame for proper expansion
+        self.components_frame.columnconfigure(0, weight=1)
+        self.components_frame.rowconfigure(0, weight=1)
+        
+        # Create PanedWindow for components tab
+        paned_window = ttk.PanedWindow(self.components_frame, orient="horizontal")
+        paned_window.grid(row=0, column=0, sticky="nsew")
+        
+        # Left side - Structure selection
+        structure_frame = ttk.Labelframe(paned_window, text="Structures")
+        structure_frame.columnconfigure(0, weight=1)
+        structure_frame.rowconfigure(0, weight=1)
+        
+        # Right side - Component details
+        component_frame = ttk.Labelframe(paned_window, text="Components")
+        component_frame.columnconfigure(0, weight=1)
+        component_frame.rowconfigure(0, weight=1)
+        
+        # Add both frames to paned window
+        paned_window.add(structure_frame, weight=1)
+        paned_window.add(component_frame, weight=2)
+        
+        # Structure selection treeview
+        structure_select_frame = ttk.Frame(structure_frame)
+        structure_select_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        
+        structure_select_frame.columnconfigure(0, weight=1)
+        structure_select_frame.rowconfigure(0, weight=1)
+        
+        # Simple structure selection treeview
+        columns = ("ID", "TYPE")
+        self.component_structure_tree = ttk.Treeview(
+            structure_select_frame,
+            columns=columns,
+            show="headings",
+            selectmode="browse"
+        )
+        
+        # Define column headings
+        for col in columns:
+            self.component_structure_tree.heading(col, text=col)
+        
+        self.component_structure_tree.column("ID", width=150)
+        self.component_structure_tree.column("TYPE", width=100)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(structure_select_frame, orient="vertical", command=self.component_structure_tree.yview)
+        self.component_structure_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Place treeview and scrollbar
+        self.component_structure_tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        
+        # Filter option below the treeview
+        filter_frame = ttk.Frame(structure_frame)
+        filter_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        
+        ttk.Label(filter_frame, text="Filter:").pack(side="left", padx=5)
+        filter_var = tk.StringVar()
+        filter_combo = ttk.Combobox(filter_frame, textvariable=filter_var, values=["All", "With Components", "Missing Components"])
+        filter_combo.pack(side="left", padx=5, fill="x", expand=True)
+        filter_combo.current(0)  # Default to "All"
+        
+        # Bind selection event
+        self.component_structure_tree.bind('<<TreeviewSelect>>', self.load_structure_components)
+        filter_combo.bind('<<ComboboxSelected>>', lambda e: self.load_structures_for_components(filter_var.get()))
+        
+        # Component list frame
+        component_list_frame = ttk.Frame(component_frame)
+        component_list_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        
+        component_list_frame.columnconfigure(0, weight=1)
+        component_list_frame.rowconfigure(0, weight=1)
+        
+        # Component treeview
+        columns = ("TYPE", "STATUS", "ORDERED", "EXPECTED", "DELIVERED", "NOTES")
+        self.component_tree = ttk.Treeview(
+            component_list_frame,
+            columns=columns,
+            show="headings",
+            selectmode="browse"
+        )
+        
+        # Define column headings
+        for col in columns:
+            self.component_tree.heading(col, text=col)
+        
+        self.component_tree.column("TYPE", width=100)
+        self.component_tree.column("STATUS", width=100)
+        self.component_tree.column("ORDERED", width=100)
+        self.component_tree.column("EXPECTED", width=100)
+        self.component_tree.column("DELIVERED", width=100)
+        self.component_tree.column("NOTES", width=200)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(component_list_frame, orient="vertical", command=self.component_tree.yview)
+        self.component_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Place treeview and scrollbar
+        self.component_tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        
+        # Button frame below the component treeview
+        button_frame = ttk.Frame(component_frame)
+        button_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        
+        # Action buttons
+        ttk.Button(
+            button_frame,
+            text="Add Component",
+            bootstyle="success-outline",
+            command=self.add_component
+        ).pack(side="left", padx=2)
+        
+        ttk.Button(
+            button_frame,
+            text="Update Status",
+            bootstyle="primary-outline",
+            command=self.update_component
+        ).pack(side="left", padx=2)
+        
+        ttk.Button(
+            button_frame,
+            text="Delete",
+            bootstyle="danger-outline",
+            command=self.delete_component
+        ).pack(side="left", padx=2)
+        
+        ttk.Button(
+            button_frame,
+            text="Generate Order Report",
+            bootstyle="info-outline",
+            command=self.generate_component_report
+        ).pack(side="right", padx=2)
+        
+        # Load structures for component tracking
+        self.load_structures_for_components()
+        
+        # Set initial position of the paned window divider
+        self.root.update_idletasks()
+        paned_window.sashpos(0, 250)
+
+    def load_structures_for_components(self, filter_option="All"):
+        """Load structures into the component tracking tab"""
+        # Clear existing items
+        for item in self.component_structure_tree.get_children():
+            self.component_structure_tree.delete(item)
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Get structures for this project
+        structures = self.db.get_all_structures(project.id)
+        
+        # Apply filter if needed
+        if filter_option == "With Components":
+            # TODO: Implement filtering for structures with components
+            pass
+        elif filter_option == "Missing Components":
+            # TODO: Implement filtering for structures missing components
+            pass
+        
+        # Add to treeview
+        for structure in structures:
+            self.component_structure_tree.insert(
+                "", 
+                "end", 
+                values=(structure.structure_id, structure.structure_type)
+            )
+
+    def load_structure_components(self, event):
+        """Load components for the selected structure"""
+        # Clear existing components
+        for item in self.component_tree.get_children():
+            self.component_tree.delete(item)
+        
+        # Get selected structure
+        selection = self.component_structure_tree.selection()
+        if not selection:
+            return
+        
+        structure_id = self.component_structure_tree.item(selection[0], "values")[0]
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Get components for this structure
+        components = self.db.get_structure_components(structure_id, project.id)
+        
+        # Add to treeview
+        for component in components:
+            # Format dates for display
+            order_date = component.order_date.strftime("%Y-%m-%d") if component.order_date else ""
+            expected_date = component.expected_delivery_date.strftime("%Y-%m-%d") if component.expected_delivery_date else ""
+            delivery_date = component.actual_delivery_date.strftime("%Y-%m-%d") if component.actual_delivery_date else ""
+            
+            self.component_tree.insert(
+                "",
+                "end",
+                values=(
+                    component.component_type_name,
+                    component.status,
+                    order_date,
+                    expected_date,
+                    delivery_date,
+                    component.notes or ""
+                ),
+                tags=(str(component.id),)  # Store the component ID as a tag
+            )
+
+    def add_component(self):
+        """Add a new component to the selected structure"""
+        # Get selected structure
+        selection = self.component_structure_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a structure first", "No Structure Selected")
+            return
+        
+        structure_id = self.component_structure_tree.item(selection[0], "values")[0]
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Create dialog window
+        component_window = ttk.Toplevel(self.root)
+        component_window.title("Add Component")
+        component_window.geometry("400x450")
+        
+        # Add padding around the entire content
+        main_frame = ttk.Frame(component_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Add Component", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Structure info
+        ttk.Label(
+            main_frame,
+            text=f"Structure: {structure_id}",
+            font=("Helvetica", 12)
+        ).pack(anchor="w", pady=(0, 20))
+        
+        # Component type selection
+        ttk.Label(main_frame, text="Component Type:").pack(anchor="w", pady=(10, 5))
+        
+        # Get component types
+        component_types = self.db.get_all_component_types()
+        type_names = [ct.name for ct in component_types]
+        
+        type_var = tk.StringVar()
+        type_combo = ttk.Combobox(main_frame, textvariable=type_var, values=type_names, state="readonly")
+        type_combo.pack(fill="x", pady=(0, 10))
+        if type_names:
+            type_combo.current(0)
+        
+        # Status selection
+        ttk.Label(main_frame, text="Status:").pack(anchor="w", pady=(10, 5))
+        
+        status_var = tk.StringVar()
+        status_options = ["pending", "ordered", "shipped", "delivered", "installed"]
+        status_combo = ttk.Combobox(main_frame, textvariable=status_var, values=status_options, state="readonly")
+        status_combo.pack(fill="x", pady=(0, 10))
+        status_combo.current(0)  # Default to "pending"
+        
+        # Order date
+        ttk.Label(main_frame, text="Order Date (YYYY-MM-DD):").pack(anchor="w", pady=(10, 5))
+        order_entry = ttk.Entry(main_frame)
+        order_entry.pack(fill="x", pady=(0, 10))
+        
+        # Expected delivery date
+        ttk.Label(main_frame, text="Expected Delivery (YYYY-MM-DD):").pack(anchor="w", pady=(10, 5))
+        expected_entry = ttk.Entry(main_frame)
+        expected_entry.pack(fill="x", pady=(0, 10))
+        
+        # Actual delivery date
+        ttk.Label(main_frame, text="Actual Delivery (YYYY-MM-DD):").pack(anchor="w", pady=(10, 5))
+        actual_entry = ttk.Entry(main_frame)
+        actual_entry.pack(fill="x", pady=(0, 10))
+        
+        # Notes
+        ttk.Label(main_frame, text="Notes:").pack(anchor="w", pady=(10, 5))
+        notes_entry = ttk.Entry(main_frame)
+        notes_entry.pack(fill="x", pady=(0, 10))
+        
+        def save_component():
+            try:
+                # Validate component type
+                if not type_var.get():
+                    Messagebox.show_error("Please select a component type", "Validation Error")
+                    return
+                
+                # Get component type ID
+                component_type_id = None
+                for ct in component_types:
+                    if ct.name == type_var.get():
+                        component_type_id = ct.id
+                        break
+                
+                if not component_type_id:
+                    Messagebox.show_error("Invalid component type", "Validation Error")
+                    return
+                
+                # Parse dates
+                order_date = None
+                expected_date = None
+                actual_date = None
+                
+                if order_entry.get().strip():
+                    try:
+                        order_date = datetime.strptime(order_entry.get().strip(), "%Y-%m-%d")
+                    except ValueError:
+                        Messagebox.show_error("Invalid order date format (use YYYY-MM-DD)", "Validation Error")
+                        return
+                
+                if expected_entry.get().strip():
+                    try:
+                        expected_date = datetime.strptime(expected_entry.get().strip(), "%Y-%m-%d")
+                    except ValueError:
+                        Messagebox.show_error("Invalid expected delivery date format (use YYYY-MM-DD)", "Validation Error")
+                        return
+                
+                if actual_entry.get().strip():
+                    try:
+                        actual_date = datetime.strptime(actual_entry.get().strip(), "%Y-%m-%d")
+                    except ValueError:
+                        Messagebox.show_error("Invalid actual delivery date format (use YYYY-MM-DD)", "Validation Error")
+                        return
+                
+                # Create component object
+                component = StructureComponent(
+                    structure_id=structure_id,
+                    component_type_id=component_type_id,
+                    status=status_var.get(),
+                    order_date=order_date,
+                    expected_delivery_date=expected_date,
+                    actual_delivery_date=actual_date,
+                    notes=notes_entry.get().strip() if notes_entry.get().strip() else None
+                )
+                
+                # Add component to database
+                success = self.db.add_structure_component(component, project.id)
+                
+                if success:
+                    Messagebox.show_info(f"{type_var.get()} component added successfully", "Success")
+                    component_window.destroy()
+                    # Refresh component list
+                    self.load_structure_components(None)
+                else:
+                    Messagebox.show_error("Failed to add component", "Database Error")
+            
+            except Exception as e:
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+        
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        # Save button
+        ttk.Button(
+            button_frame,
+            text="Save",
+            bootstyle="primary",
+            command=save_component
+        ).pack(side="left", padx=5)
+        
+        # Cancel button
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=component_window.destroy
+        ).pack(side="right", padx=5)
+
+    def update_component(self):
+        """Update the status of a component"""
+        # Get selected component
+        selection = self.component_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a component first", "No Component Selected")
+            return
+        
+        # Get component ID from tags
+        component_id = int(self.component_tree.item(selection[0], "tags")[0])
+        
+        # Get current values
+        values = self.component_tree.item(selection[0], "values")
+        current_type = values[0]
+        current_status = values[1]
+        current_notes = values[5]
+        
+        # Create dialog window
+        update_window = ttk.Toplevel(self.root)
+        update_window.title("Update Component Status")
+        update_window.geometry("400x300")
+        
+        # Add padding around the entire content
+        main_frame = ttk.Frame(update_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Update Component Status", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Component info
+        ttk.Label(
+            main_frame,
+            text=f"Component: {current_type}",
+            font=("Helvetica", 12)
+        ).pack(anchor="w", pady=(0, 20))
+        
+        # Status selection
+        ttk.Label(main_frame, text="Status:").pack(anchor="w", pady=(10, 5))
+        
+        status_var = tk.StringVar(value=current_status)
+        status_options = ["pending", "ordered", "shipped", "delivered", "installed"]
+        status_combo = ttk.Combobox(main_frame, textvariable=status_var, values=status_options, state="readonly")
+        status_combo.pack(fill="x", pady=(0, 10))
+        
+        # Actual delivery date (only if status is "delivered" or "installed")
+        delivery_frame = ttk.Frame(main_frame)
+        delivery_frame.pack(fill="x", pady=(10, 5))
+        
+        ttk.Label(delivery_frame, text="Delivery Date (YYYY-MM-DD):").pack(anchor="w")
+        actual_entry = ttk.Entry(delivery_frame)
+        actual_entry.pack(fill="x", pady=(5, 0))
+        
+        # Hide/show delivery date based on status
+        def toggle_delivery_date(*args):
+            if status_var.get() in ["delivered", "installed"]:
+                delivery_frame.pack(fill="x", pady=(10, 5))
+            else:
+                delivery_frame.pack_forget()
+        
+        status_var.trace("w", toggle_delivery_date)
+        toggle_delivery_date()  # Initial state
+        
+        # Notes
+        ttk.Label(main_frame, text="Notes:").pack(anchor="w", pady=(10, 5))
+        notes_entry = ttk.Entry(main_frame)
+        notes_entry.insert(0, current_notes)
+        notes_entry.pack(fill="x", pady=(0, 10))
+        
+        def save_update():
+            try:
+                # Parse delivery date if provided
+                actual_date = None
+                if status_var.get() in ["delivered", "installed"] and actual_entry.get().strip():
+                    try:
+                        actual_date = datetime.strptime(actual_entry.get().strip(), "%Y-%m-%d")
+                    except ValueError:
+                        Messagebox.show_error("Invalid delivery date format (use YYYY-MM-DD)", "Validation Error")
+                        return
+                
+                # Update component status
+                success = self.db.update_component_status(
+                    component_id,
+                    status_var.get(),
+                    notes_entry.get().strip() if notes_entry.get().strip() else None,
+                    actual_date
+                )
+                
+                if success:
+                    Messagebox.show_info("Component status updated successfully", "Success")
+                    update_window.destroy()
+                    # Refresh component list
+                    self.load_structure_components(None)
+                else:
+                    Messagebox.show_error("Failed to update component status", "Database Error")
+            
+            except Exception as e:
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+
+        # Save button
+        ttk.Button(
+            button_frame,
+            text="Save",
+            bootstyle="primary",
+            command=save_update
+        ).pack(side="left", padx=5)
+
+        # Cancel button
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=update_window.destroy
+        ).pack(side="right", padx=5)
+
+    def delete_component(self):
+        """Delete the selected component"""
+        # Get selected component
+        selection = self.component_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a component first", "No Component Selected")
+            return
+        
+        # Get component ID from tags
+        component_id = int(self.component_tree.item(selection[0], "tags")[0])
+        
+        # Get current values for confirmation message
+        values = self.component_tree.item(selection[0], "values")
+        component_type = values[0]
+        
+        # Confirm deletion
+        confirm = Messagebox.yesno(
+            f"Are you sure you want to delete the {component_type} component?",
+            "Confirm Deletion"
+        )
+        
+        if not confirm:
+            return
+        
+        # Delete the component
+        success = self.db.delete_structure_component(component_id)
+        
+        if success:
+            Messagebox.show_info(f"{component_type} component deleted successfully", "Success")
+            # Remove from treeview
+            self.component_tree.delete(selection[0])
+        else:
+            Messagebox.show_error(f"Failed to delete component", "Database Error")
+
+    def generate_component_report(self):
+        """Generate a report of components and their statuses"""
+        # Get selected structure
+        selection = self.component_structure_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a structure first", "No Structure Selected")
+            return
+        
+        structure_id = self.component_structure_tree.item(selection[0], "values")[0]
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Get components for this structure
+        components = self.db.get_structure_components(structure_id, project.id)
+        
+        if not components:
+            Messagebox.show_info(f"No components found for structure {structure_id}", "Empty Report")
+            return
+        
+        # Create report window
+        report_window = ttk.Toplevel(self.root)
+        report_window.title(f"Component Report: {structure_id}")
+        report_window.geometry("700x500")
+        
+        # Main container with padding
+        main_frame = ttk.Frame(report_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Report header
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            header_frame, 
+            text=f"Component Report for Structure: {structure_id}",
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(side="left")
+        
+        # Report date
+        ttk.Label(
+            header_frame, 
+            text=f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            bootstyle="secondary"
+        ).pack(side="right")
+        
+        # Content frame
+        content_frame = ttk.Labelframe(main_frame, text="Component Summary", padding=10)
+        content_frame.pack(fill="both", expand=True)
+        
+        # Report text widget with scrollbar
+        report_text = tk.Text(content_frame, wrap='word', font=("Consolas", 11))
+        scrollbar = ttk.Scrollbar(content_frame, orient='vertical', command=report_text.yview)
+        report_text.configure(yscrollcommand=scrollbar.set)
+        
+        report_text.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # Add tags for styling
+        report_text.tag_configure("heading", font=("Helvetica", 12, "bold"))
+        report_text.tag_configure("subheading", font=("Helvetica", 11, "bold"))
+        report_text.tag_configure("normal", font=("Helvetica", 11))
+        report_text.tag_configure("data", font=("Consolas", 11))
+        report_text.tag_configure("status-pending", font=("Consolas", 11), foreground="orange")
+        report_text.tag_configure("status-ordered", font=("Consolas", 11), foreground="blue")
+        report_text.tag_configure("status-shipped", font=("Consolas", 11), foreground="purple")
+        report_text.tag_configure("status-delivered", font=("Consolas", 11), foreground="green")
+        report_text.tag_configure("status-installed", font=("Consolas", 11), foreground="green")
+        
+        # Generate report content
+        report_text.insert(tk.END, f"Structure ID: {structure_id}\n", "heading")
+        report_text.insert(tk.END, f"Total Components: {len(components)}\n\n", "normal")
+        
+        # Status summary
+        status_counts = {}
+        for component in components:
+            status_counts[component.status] = status_counts.get(component.status, 0) + 1
+        
+        report_text.insert(tk.END, "Status Summary:\n", "subheading")
+        for status, count in status_counts.items():
+            report_text.insert(tk.END, f"  {status}: {count}\n", f"status-{status}")
+        
+        report_text.insert(tk.END, "\nComponent Details:\n", "subheading")
+        
+        # Component details
+        for i, component in enumerate(components):
+            if i > 0:
+                report_text.insert(tk.END, "\n" + "-"*50 + "\n", "normal")
+            
+            # Format dates for display
+            order_date = component.order_date.strftime("%Y-%m-%d") if component.order_date else "Not set"
+            expected_date = component.expected_delivery_date.strftime("%Y-%m-%d") if component.expected_delivery_date else "Not set"
+            delivery_date = component.actual_delivery_date.strftime("%Y-%m-%d") if component.actual_delivery_date else "Not delivered"
+            
+            report_text.insert(tk.END, f"{component.component_type_name}\n", "subheading")
+            report_text.insert(tk.END, f"  Status: {component.status}\n", f"status-{component.status}")
+            report_text.insert(tk.END, f"  Order Date: {order_date}\n", "data")
+            report_text.insert(tk.END, f"  Expected Delivery: {expected_date}\n", "data")
+            report_text.insert(tk.END, f"  Actual Delivery: {delivery_date}\n", "data")
+            
+            if component.notes:
+                report_text.insert(tk.END, f"  Notes: {component.notes}\n", "data")
+        
+        # Make text readonly
+        report_text.configure(state='disabled')
+        
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        # Export button
+        ttk.Button(
+            button_frame, 
+            text="Export as PDF", 
+            bootstyle="success",
+            command=lambda: Messagebox.show_info("PDF export functionality not implemented yet", "Feature Coming Soon")
+        ).pack(side="left", padx=5)
+        
+        # Print button
+        ttk.Button(
+            button_frame, 
+            text="Print", 
+            bootstyle="info",
+            command=lambda: Messagebox.show_info("Print functionality not implemented yet", "Feature Coming Soon")
+        ).pack(side="left", padx=5)
+        
+        # Close button
+        ttk.Button(
+            button_frame, 
+            text="Close", 
+            bootstyle="secondary",
+            command=report_window.destroy
+        ).pack(side="right", padx=5)
 
     def import_structures(self):
         """Import structures from a file"""

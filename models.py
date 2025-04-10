@@ -45,3 +45,26 @@ class StructureGroup:
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+@dataclass
+class StructureComponent:
+    structure_id: str
+    component_type_id: int
+    status: str
+    id: Optional[int] = None
+    component_type_name: Optional[str] = None
+    order_date: Optional[datetime] = None
+    expected_delivery_date: Optional[datetime] = None
+    actual_delivery_date: Optional[datetime] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+@dataclass
+class ComponentType:
+    id: int
+    name: str
+    description: Optional[str] = None
+    category: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

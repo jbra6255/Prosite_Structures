@@ -5,7 +5,7 @@ from tkinter import ttk, messagebox, simpledialog
 import sqlite3
 from datetime import datetime
 from typing import List, Optional, Tuple, Dict, Any
-from models import Structure, StructureGroup
+from models import Structure, StructureGroup, ComponentType, StructureComponent
 import hashlib
 import logging
 from logger import AppLogger
@@ -129,6 +129,37 @@ class DatabaseManager:
                     )
                 ''')
 
+                # Create structure component types table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS structure_component_types (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        description TEXT,
+                        created_at TIMESTAMP NOT NULL,
+                        UNIQUE (name)
+                    )
+                ''')
+
+                # Create structure components table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS structure_components (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        structure_id TEXT NOT NULL,
+                        project_id INTEGER NOT NULL,
+                        component_type_id INTEGER NOT NULL,
+                        status TEXT NOT NULL,  -- 'pending', 'ordered', 'shipped', 'delivered', 'installed'
+                        order_date TIMESTAMP,
+                        expected_delivery_date TIMESTAMP,
+                        actual_delivery_date TIMESTAMP,
+                        notes TEXT,
+                        created_at TIMESTAMP NOT NULL,
+                        updated_at TIMESTAMP NOT NULL,
+                        FOREIGN KEY (structure_id, project_id) REFERENCES structures (structure_id, project_id),
+                        FOREIGN KEY (component_type_id) REFERENCES structure_component_types (id),
+                        FOREIGN KEY (project_id) REFERENCES projects (id)
+                    )
+                ''')
+
                 # After all tables are created, check for the description column
                 cursor.execute("PRAGMA table_info(structures)")
                 columns = [col[1] for col in cursor.fetchall()]
@@ -149,11 +180,181 @@ class DatabaseManager:
                     self.logger.info("Adding frame_type column to structures table")
                     cursor.execute("ALTER TABLE structures ADD COLUMN frame_type TEXT")
                     conn.commit()
+
+                # Initialize default component types
+                self.initialize_component_types()
         
         except sqlite3.Error as e:
             self.logger.critical(f"Database initialization failed: {e}", exc_info=True)
             raise
+    
+        # === Component Management Methods ===
 
+    def initialize_component_types(self):
+        """Initialize default component types if they don't exist"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if component types exist
+                cursor.execute("SELECT COUNT(*) FROM structure_component_types")
+                count = cursor.fetchone()[0]
+                
+                if count == 0:
+                    # Add default component types
+                    now = datetime.now().isoformat()
+                    default_types = [
+                        ("Base", "Structure base component"),
+                        ("Riser", "Vertical riser component"),
+                        ("Lid", "Structure top/lid component"),
+                        ("Frame", "Structure frame component")
+                    ]
+                    
+                    for name, description in default_types:
+                        cursor.execute('''
+                            INSERT INTO structure_component_types (name, description, created_at)
+                            VALUES (?, ?, ?)
+                        ''', (name, description, now))
+                    
+                    self.logger.info(f"Initialized default component types: {len(default_types)}")
+        except sqlite3.Error as e:
+            self.logger.error(f"Error initializing component types: {e}", exc_info=True)
+            
+    def get_all_component_types(self) -> List[ComponentType]:
+        """Get all component types"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, name, description, created_at
+                    FROM structure_component_types
+                    ORDER BY name
+                ''')
+                
+                types = []
+                for row in cursor.fetchall():
+                    types.append(ComponentType(
+                        id=row[0],
+                        name=row[1],
+                        description=row[2],
+                        created_at=self.safe_date_parse(row[3])
+                    ))
+                return types
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting component types: {e}", exc_info=True)
+            return []
+
+    def get_structure_components(self, structure_id: str, project_id: int) -> List[StructureComponent]:
+        """Get all components for a structure"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT sc.id, sc.structure_id, sc.component_type_id, sc.status,
+                        sc.order_date, sc.expected_delivery_date, sc.actual_delivery_date,
+                        sc.notes, sc.created_at, sc.updated_at, ct.name
+                    FROM structure_components sc
+                    JOIN structure_component_types ct ON sc.component_type_id = ct.id
+                    WHERE sc.structure_id = ? AND sc.project_id = ?
+                    ORDER BY ct.name
+                ''', (structure_id, project_id))
+                
+                components = []
+                for row in cursor.fetchall():
+                    components.append(StructureComponent(
+                        id=row[0],
+                        structure_id=row[1],
+                        component_type_id=row[2],
+                        status=row[3],
+                        order_date=self.safe_date_parse(row[4]),
+                        expected_delivery_date=self.safe_date_parse(row[5]),
+                        actual_delivery_date=self.safe_date_parse(row[6]),
+                        notes=row[7],
+                        created_at=self.safe_date_parse(row[8]),
+                        updated_at=self.safe_date_parse(row[9]),
+                        component_type_name=row[10],
+                        project_id=project_id
+                    ))
+                return components
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting structure components: {e}", exc_info=True)
+            return []
+            
+    def add_structure_component(self, component: StructureComponent, project_id: int) -> bool:
+        """Add a new component for a structure"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                
+                # Format dates properly
+                order_date = component.order_date.isoformat() if component.order_date else None
+                expected_date = component.expected_delivery_date.isoformat() if component.expected_delivery_date else None
+                actual_date = component.actual_delivery_date.isoformat() if component.actual_delivery_date else None
+                
+                cursor.execute('''
+                    INSERT INTO structure_components (
+                        structure_id, project_id, component_type_id, status,
+                        order_date, expected_delivery_date, actual_delivery_date,
+                        notes, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    component.structure_id, project_id, component.component_type_id,
+                    component.status, order_date, expected_date, actual_date,
+                    component.notes, now, now
+                ))
+                return True
+        except sqlite3.Error as e:
+            self.logger.error(f"Error adding structure component: {e}", exc_info=True)
+            return False
+            
+    def update_component_status(self, component_id: int, status: str, notes: str = None,
+                            actual_delivery_date: datetime = None) -> bool:
+        """Update a component's status"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                
+                # Format date properly
+                delivery_date = actual_delivery_date.isoformat() if actual_delivery_date else None
+                
+                if notes:
+                    cursor.execute('''
+                        UPDATE structure_components SET
+                            status = ?,
+                            notes = ?,
+                            actual_delivery_date = ?,
+                            updated_at = ?
+                        WHERE id = ?
+                    ''', (status, notes, delivery_date, now, component_id))
+                else:
+                    cursor.execute('''
+                        UPDATE structure_components SET
+                            status = ?,
+                            actual_delivery_date = ?,
+                            updated_at = ?
+                        WHERE id = ?
+                    ''', (status, delivery_date, now, component_id))
+                    
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.logger.error(f"Error updating component status: {e}", exc_info=True)
+            return False
+            
+    def delete_structure_component(self, component_id: int) -> bool:
+        """Delete a structure component"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    DELETE FROM structure_components WHERE id = ?
+                ''', (component_id,))
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.logger.error(f"Error deleting component: {e}", exc_info=True)
+            return False
+    
     # === User Management Methods ===
     
     def create_user(self, username: str, email: str, password: str) -> Optional[User]:
