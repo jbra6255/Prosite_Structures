@@ -10,6 +10,7 @@ import hashlib
 import logging
 from logger import AppLogger
 from sqlite3 import Error, IntegrityError, OperationalError, ProgrammingError
+from db_migrations import create_migrations
 
 class User:
     def __init__(self, id: int, username: str, email: str):
@@ -26,13 +27,31 @@ class Project:
 
 class DatabaseManager:
     def __init__(self, db_path: str = "structures.db"):
+        """Initialize the database manager and run migrations"""
         self.db_path = db_path
         self.logger = AppLogger().logger
+        
+        # Create base tables
         self.initialize_database()
+        
+        # Setup and run migrations
+        self.migrations = create_migrations(self.logger)
+        current_version = self.migrations.get_current_version()
+        self.migrations.migrate()  # Migrate to latest version
+        latest_version = self.migrations.get_current_version()
+        
+        if current_version != latest_version:
+            self.logger.info(f"Database migrated from version {current_version} to {latest_version}")
+        else:
+            self.logger.info(f"Database is at the latest version: {current_version}")
+        
+        # Initialize default component types
+        self.initialize_component_types()
+        
         self.logger.info(f"Database initialized: {db_path}")
 
     def initialize_database(self):
-        """Create tables if they don't exist with improved logging"""
+        """Create base tables if they don't exist (migration system will handle schema evolution)"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -75,7 +94,8 @@ class DatabaseManager:
                     )
                 ''')
                 
-                # Create structures table with optional fields and project_id
+                # Create structures table with core fields only
+                # Additional fields like description and frame_type will be added through migrations
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS structures (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,8 +109,6 @@ class DatabaseManager:
                         pipe_length REAL,
                         pipe_diameter REAL,
                         pipe_type TEXT,
-                        frame_type TEXT,
-                        description TEXT,
                         group_name TEXT,
                         project_id INTEGER NOT NULL,
                         created_at TIMESTAMP NOT NULL,
@@ -147,7 +165,7 @@ class DatabaseManager:
                         structure_id TEXT NOT NULL,
                         project_id INTEGER NOT NULL,
                         component_type_id INTEGER NOT NULL,
-                        status TEXT NOT NULL,  -- 'pending', 'ordered', 'shipped', 'delivered', 'installed'
+                        status TEXT NOT NULL,
                         order_date TIMESTAMP,
                         expected_delivery_date TIMESTAMP,
                         actual_delivery_date TIMESTAMP,
@@ -159,31 +177,9 @@ class DatabaseManager:
                         FOREIGN KEY (project_id) REFERENCES projects (id)
                     )
                 ''')
+                
+                # No need to check for columns here anymore - migrations will handle that
 
-                # After all tables are created, check for the description column
-                cursor.execute("PRAGMA table_info(structures)")
-                columns = [col[1] for col in cursor.fetchall()]
-                
-                # Add description column if it doesn't exist
-                if "description" not in columns:
-                    self.logger.info("Adding description column to structures table")
-                    cursor.execute("ALTER TABLE structures ADD COLUMN description TEXT")
-                    conn.commit()
-    
-                
-                # After all tables are created, check for the frame_type column
-                cursor.execute("PRAGMA table_info(structures)")
-                columns = [col[1] for col in cursor.fetchall()]
-                
-                # Add frame_type column if it doesn't exist
-                if "frame_type" not in columns:
-                    self.logger.info("Adding frame_type column to structures table")
-                    cursor.execute("ALTER TABLE structures ADD COLUMN frame_type TEXT")
-                    conn.commit()
-
-                # Initialize default component types
-                self.initialize_component_types()
-        
         except sqlite3.Error as e:
             self.logger.critical(f"Database initialization failed: {e}", exc_info=True)
             raise
@@ -998,37 +994,86 @@ class DatabaseManager:
             return []
         
     def row_to_structure(self, row) -> Structure:
-        """Convert database row to Structure object"""
+        """
+        Convert database row to Structure object using a more robust approach.
         
-        # Create structure without the problematic description field
-        structure = Structure(
-            id=row[0],
-            structure_id=row[1],
-            structure_type=row[2],
-            rim_elevation=row[3],
-            invert_out_elevation=row[4],
-            invert_out_angle=row[5],
-            vert_drop=row[6],
-            upstream_structure_id=row[7],
-            pipe_length=row[8],
-            pipe_diameter=row[9],
-            pipe_type=row[10],
-            frame_type=row[11],
-            description=row[12] if len(row) > 12 else None,  # Explicitly handle description
-            group_name=row[13] if len(row) > 13 else None,
-            created_at=self.safe_date_parse(row[14] if len(row) > 14 else None),
-            updated_at=self.safe_date_parse(row[15] if len(row) > 15 else None)
-        )
+        This method dynamically maps database columns to structure attributes
+        based on column position (index) in the result set.
+        """
+        # Get column names from cursor description if available
+        column_names = []
+        if hasattr(row, 'cursor') and hasattr(row.cursor, 'description'):
+            column_names = [desc[0] for desc in row.cursor.description]
         
-        # Try to set description separately if it exists
-        try:
-            # Check if description field exists in the row
-            if len(row) > 15 and row[15] is not None:
-                structure.description = row[15]
-        except AttributeError:
-            # If the structure doesn't have a description attribute, log it
-            self.logger.warning("Structure class does not have a description attribute")
+        # Create dictionary mapping column names or indices to values
+        data = {}
         
+        # First, handle the case where row is a tuple (standard sqlite result)
+        if isinstance(row, tuple):
+            # These are standard columns that should always be present
+            # Map by position to ensure backward compatibility
+            standard_fields = [
+                'id', 'structure_id', 'structure_type', 'rim_elevation', 
+                'invert_out_elevation', 'invert_out_angle', 'vert_drop',
+                'upstream_structure_id', 'pipe_length', 'pipe_diameter', 'pipe_type'
+            ]
+            
+            # Map all available standard fields
+            for i, field in enumerate(standard_fields):
+                if i < len(row):
+                    data[field] = row[i]
+            
+            # Check for additional columns that might be present in newer schema versions
+            # If we have column names, use them for mapping
+            if column_names:
+                for i, col_name in enumerate(column_names):
+                    if col_name not in standard_fields and i < len(row):
+                        data[col_name] = row[i]
+            else:
+                # If no column names, try to map remaining columns by position
+                # Add special handling for known extended fields
+                extended_fields = ['frame_type', 'description', 'group_name', 'created_at', 'updated_at']
+                offset = len(standard_fields)
+                
+                for i, field in enumerate(extended_fields):
+                    if offset + i < len(row):
+                        data[field] = row[offset + i]
+        
+        # Handle dictionaries (e.g., for Row objects in some SQL libraries)
+        elif isinstance(row, dict):
+            data = row.copy()
+        
+        # Create the structure with all available data
+        kwargs = {
+            'id': data.get('id'),
+            'structure_id': data.get('structure_id'),
+            'structure_type': data.get('structure_type'),
+            'rim_elevation': data.get('rim_elevation'),
+            'invert_out_elevation': data.get('invert_out_elevation'),
+            'invert_out_angle': data.get('invert_out_angle'),
+            'vert_drop': data.get('vert_drop'),
+            'upstream_structure_id': data.get('upstream_structure_id'),
+            'pipe_length': data.get('pipe_length'),
+            'pipe_diameter': data.get('pipe_diameter'),
+            'pipe_type': data.get('pipe_type')
+        }
+        
+        # Add optional fields that might be present in newer schema versions
+        if 'frame_type' in data:
+            kwargs['frame_type'] = data.get('frame_type')
+        if 'description' in data:
+            kwargs['description'] = data.get('description')
+        if 'group_name' in data:
+            kwargs['group_name'] = data.get('group_name')
+        
+        # Handle timestamps
+        if 'created_at' in data:
+            kwargs['created_at'] = self.safe_date_parse(data.get('created_at'))
+        if 'updated_at' in data:
+            kwargs['updated_at'] = self.safe_date_parse(data.get('updated_at'))
+        
+        # Create and return the structure
+        structure = Structure(**kwargs)
         return structure
 
     def delete_group(self, group_name: str, project_id: int) -> bool:
