@@ -1062,6 +1062,7 @@ class DatabaseManager:
         if 'frame_type' in data:
             kwargs['frame_type'] = data.get('frame_type')
         if 'description' in data:
+            # Pass directly to the constructor - the __post_init__ will handle it
             kwargs['description'] = data.get('description')
         if 'group_name' in data:
             kwargs['group_name'] = data.get('group_name')

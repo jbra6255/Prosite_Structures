@@ -23,12 +23,15 @@ class Structure:
     
     # Add the description property separately
     def __post_init__(self):
-        self._description = None
-    
+        # Store the initial description value properly
+        self._description = self.description
+        # Clear the public attribute to ensure property access is used
+        self.__dict__.pop('description', None)
+
     @property
     def description(self) -> Optional[str]:
         return self._description
-    
+
     @description.setter
     def description(self, value: Optional[str]):
         self._description = value

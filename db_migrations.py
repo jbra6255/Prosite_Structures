@@ -116,7 +116,7 @@ class DatabaseMigration:
                     self.logger.info(f"Successfully applied migration {version}: {name}")
             except Exception as e:
                 self.logger.error(f"Migration {version} failed: {e}", exc_info=True)
-                break
+                # Don't break - try to continue with remaining migrations
     
     def _migrate_down(self, current_version: int, target_version: int):
         """Apply reverse migrations to reach target version"""
@@ -161,6 +161,13 @@ class DatabaseMigration:
                 self.logger.error(f"Reverting migration {version} failed: {e}", exc_info=True)
                 break
 
+def column_exists(conn, table, column):
+    """Check if a column exists in a table"""
+    cursor = conn.cursor()
+    cursor.execute(f"PRAGMA table_info({table})")
+    columns = [info[1] for info in cursor.fetchall()]
+    return column in columns
+
 # Define our migrations for the structures database
 
 def create_migrations(logger):
@@ -170,7 +177,13 @@ def create_migrations(logger):
     # Migration 1: Add description column to structures table
     def add_description_column_up(conn):
         cursor = conn.cursor()
-        cursor.execute("ALTER TABLE structures ADD COLUMN description TEXT")
+        
+        # Check if the column already exists first
+        if not column_exists(conn, "structures", "description"):
+            logger.info("Adding description column to structures table")
+            cursor.execute("ALTER TABLE structures ADD COLUMN description TEXT")
+        else:
+            logger.info("Description column already exists in structures table")
     
     def add_description_column_down(conn):
         # SQLite doesn't support dropping columns directly
@@ -187,7 +200,13 @@ def create_migrations(logger):
     # Migration 2: Add frame_type column to structures table
     def add_frame_type_column_up(conn):
         cursor = conn.cursor()
-        cursor.execute("ALTER TABLE structures ADD COLUMN frame_type TEXT")
+        
+        # Check if the column already exists first
+        if not column_exists(conn, "structures", "frame_type"):
+            logger.info("Adding frame_type column to structures table")
+            cursor.execute("ALTER TABLE structures ADD COLUMN frame_type TEXT")
+        else:
+            logger.info("Frame_type column already exists in structures table")
     
     def add_frame_type_column_down(conn):
         # SQLite doesn't support dropping columns directly
