@@ -2213,11 +2213,9 @@ class StructureManagementApp:
             self.entries['Pipe Type:'].insert(0, structure.pipe_type)
         if structure.frame_type:
             self.entries['Frame Type:'].insert(0, structure.frame_type)
+        
+        # Only insert the description once - use the property accessor
         if structure.description:
-            self.entries['Description:'].insert(0, structure.description)
-
-        # Check if the structure has a description attribute and if it has a value
-        if hasattr(structure, 'description') and structure.description:
             self.entries['Description:'].insert(0, structure.description)
 
     def load_structures(self):
