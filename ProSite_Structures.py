@@ -34,6 +34,9 @@ class StructureManagementApp:
         # Structure type options
         self.structure_types = ['CB', 'JB', 'DI', 'HW', 'UGDS']
         
+        # Pipe Sizes (Diameters)
+        self.pipe_sizes = ['15', '18', '24', '30', '36', '42', '48', '54', '60', '66', '72']
+
         # Start with login screen
         self.show_login_screen()
 
@@ -559,6 +562,14 @@ class StructureManagementApp:
             # Entry or combobox in the second column - expands to fill space
             if label == 'Structure Type:':
                 self.entries[label] = ttk.Combobox(form_frame, values=self.structure_types)
+            elif label == 'Pipe Diameter:':
+                #Create dropdown for pipe sizes
+                self.entries[label] = ttk.Combobox(form_frame, values=self.pipe_sizes, state="readonly")
+            elif label == 'Pipe Type:':
+                # Create dropdown for pipe types
+                self.entries[label] = ttk.Combobox(form_frame, state="readonly")
+                # Load pipe types from database
+                self.refresh_pipe_types()    
             else:
                 self.entries[label] = ttk.Entry(form_frame)
             
@@ -1218,6 +1229,11 @@ class StructureManagementApp:
             command=update_window.destroy
         ).pack(side="right", padx=5)
 
+    def refresh_pipe_types(self):
+        """Refresh the pipe types dropdown with current values from database"""
+        pipe_types = self.db.get_all_pipe_types()
+        self.entries['Pipe Type:']['values'] = pipe_types
+
     def delete_component(self):
         """Delete the selected component"""
         # Get selected component
@@ -1820,7 +1836,7 @@ class StructureManagementApp:
         """Show the user preferences dialog"""
         pref_window = ttk.Toplevel(self.root)
         pref_window.title("User Preferences")
-        pref_window.geometry("500x400")
+        pref_window.geometry("600x500")
         
         # Main container with padding
         main_frame = ttk.Frame(pref_window, padding=20)
@@ -1842,6 +1858,10 @@ class StructureManagementApp:
         general_frame = ttk.Frame(pref_notebook, padding=10)
         pref_notebook.add(general_frame, text="General")
         
+        # Pipe Types Configuration tab
+        pipe_types_frame = ttk.Frame(pref_notebook, padding=10)
+        pref_notebook.add(pipe_types_frame, text="Pipe Types")
+
         # Display preferences tab
         display_frame = ttk.Frame(pref_notebook, padding=10)
         pref_notebook.add(display_frame, text="Display")
@@ -1849,6 +1869,9 @@ class StructureManagementApp:
         # Units preferences tab
         units_frame = ttk.Frame(pref_notebook, padding=10)
         pref_notebook.add(units_frame, text="Units")
+
+        # Configure the pipe types tab
+        self.setup_pipe_types_configuration(pipe_types_frame)
         
         # General preferences content
         ttk.Label(general_frame, text="Default Project:").grid(row=0, column=0, sticky="w", padx=5, pady=10)
@@ -1958,6 +1981,115 @@ class StructureManagementApp:
             command=pref_window.destroy
         ).pack(side="right")
         
+    def setup_pipe_types_configuration(self, parent_frame):
+        """Setup the pipe types configuration panel"""
+        # Title
+        ttk.Label(
+            parent_frame, 
+            text="Manage Pipe Types", 
+            font=("Helvetica", 14, "bold"),
+            bootstyle="primary"
+        ).pack(anchor="w", pady=(0, 20))
+        
+        # Create a frame for the list and buttons
+        list_frame = ttk.Frame(parent_frame)
+        list_frame.pack(fill="both", expand=True)
+        
+        # Create treeview for pipe types
+        columns = ("Type",)
+        pipe_types_tree = ttk.Treeview(
+            list_frame,
+            columns=columns,
+            show="headings",
+            height=12
+        )
+        
+        pipe_types_tree.heading("Type", text="Pipe Type")
+        pipe_types_tree.column("Type", width=300)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=pipe_types_tree.yview)
+        pipe_types_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack the treeview and scrollbar
+        pipe_types_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Populate the list
+        def refresh_pipe_types_list():
+            # Clear existing items
+            for item in pipe_types_tree.get_children():
+                pipe_types_tree.delete(item)
+            
+            # Get pipe types from database
+            pipe_types = self.db.get_all_pipe_types()
+            
+            # Add to treeview
+            for pipe_type in pipe_types:
+                pipe_types_tree.insert("", "end", values=(pipe_type,))
+        
+        refresh_pipe_types_list()
+        
+        # Button frame
+        button_frame = ttk.Frame(parent_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        # Add button
+        def add_pipe_type():
+            type_name = dialogs.dialogs.Querybox.get_string(
+                "Enter new pipe type name:", 
+                "Add Pipe Type"
+            )
+            
+            if type_name:
+                success = self.db.add_pipe_type(type_name)
+                if success:
+                    Messagebox.show_info(f"Pipe type '{type_name}' added successfully", "Success")
+                    refresh_pipe_types_list()
+                    # Also refresh the dropdown in the main form
+                    self.refresh_pipe_types()
+                else:
+                    Messagebox.show_error(f"Pipe type '{type_name}' already exists", "Error")
+        
+        ttk.Button(
+            button_frame,
+            text="Add Pipe Type",
+            bootstyle="success",
+            command=add_pipe_type
+        ).pack(side="left", padx=5)
+        
+        # Delete button
+        def delete_pipe_type():
+            selection = pipe_types_tree.selection()
+            if not selection:
+                Messagebox.show_warning("Please select a pipe type to delete", "No Selection")
+                return
+            
+            pipe_type = pipe_types_tree.item(selection[0], "values")[0]
+            
+            # Confirm deletion
+            confirm = Messagebox.yesno(
+                f"Are you sure you want to delete '{pipe_type}'?",
+                "Confirm Deletion"
+            )
+            
+            if confirm:
+                success = self.db.delete_pipe_type(pipe_type)
+                if success:
+                    Messagebox.show_info(f"Pipe type '{pipe_type}' deleted successfully", "Success")
+                    refresh_pipe_types_list()
+                    # Also refresh the dropdown in the main form
+                    self.refresh_pipe_types()
+                else:
+                    Messagebox.show_error(f"Failed to delete pipe type '{pipe_type}'", "Error")
+        
+        ttk.Button(
+            button_frame,
+            text="Delete Selected",
+            bootstyle="danger",
+            command=delete_pipe_type
+        ).pack(side="left", padx=5)
+    
     def save_preferences(self, default_project, autosave, auto_backup, 
                     theme, font_size, density, length_unit, 
                     diameter_unit, elevation_unit, window):
@@ -2056,7 +2188,11 @@ class StructureManagementApp:
                 
                 # Optional numeric fields
                 pipe_length = float(self.entries['Pipe Length:'].get()) if self.entries['Pipe Length:'].get() else None
-                pipe_diameter = float(self.entries['Pipe Diameter:'].get()) if self.entries['Pipe Diameter:'].get() else None
+                
+                # Get pipe diameter from dropdown
+                pipe_diameter_text = self.entries['Pipe Diameter:'].get()
+                pipe_diameter = float(pipe_diameter_text) if pipe_diameter_text else None
+                
                 vert_drop = float(self.entries['Drop (VF):'].get()) if self.entries['Drop (VF):'].get() else None
             except ValueError:
                 Messagebox.show_error(
@@ -2067,7 +2203,7 @@ class StructureManagementApp:
                 
             # Get other optional fields
             upstream_structure_id = self.entries['Upstream Structure:'].get() or None
-            pipe_type = self.entries['Pipe Type:'].get() or None
+            pipe_type = self.entries['Pipe Type:'].get() or None  # Get from dropdown
             frame_type = self.entries['Frame Type:'].get() or None
             description = self.entries['Description:'].get() or None
             
@@ -2208,9 +2344,11 @@ class StructureManagementApp:
         if structure.pipe_length:
             self.entries['Pipe Length:'].insert(0, str(structure.pipe_length))
         if structure.pipe_diameter:
-            self.entries['Pipe Diameter:'].insert(0, str(structure.pipe_diameter))
+            # For the dropdown, we need to set the value
+            self.entries['Pipe Diameter:'].set(str(int(structure.pipe_diameter)))
         if structure.pipe_type:
-            self.entries['Pipe Type:'].insert(0, structure.pipe_type)
+            # For the dropdown, we need to set the value
+            self.entries['Pipe Type:'].set(structure.pipe_type)
         if structure.frame_type:
             self.entries['Frame Type:'].insert(0, structure.frame_type)
         
@@ -2293,7 +2431,11 @@ class StructureManagementApp:
                 rim_elevation = float(self.entries['Rim Elevation: '].get())
                 invert_out_elevation = float(self.entries['Invert Out Elevation: '].get())
                 pipe_length = float(self.entries['Pipe Length:'].get()) if self.entries['Pipe Length:'].get() else None
-                pipe_diameter = float(self.entries['Pipe Diameter:'].get()) if self.entries['Pipe Diameter:'].get() else None
+                
+                # Get pipe diameter from dropdown
+                pipe_diameter_text = self.entries['Pipe Diameter:'].get()
+                pipe_diameter = float(pipe_diameter_text) if pipe_diameter_text else None
+                
                 vert_drop = float(self.entries['Drop (VF):'].get()) if self.entries['Drop (VF):'].get() else None
             except ValueError:
                 Messagebox.show_error(
@@ -2304,7 +2446,7 @@ class StructureManagementApp:
                 
             # Get other optional fields
             upstream_structure_id = self.entries['Upstream Structure:'].get() or None
-            pipe_type = self.entries['Pipe Type:'].get() or None
+            pipe_type = self.entries['Pipe Type:'].get() or None  # Get from dropdown
             frame_type = self.entries['Frame Type:'].get() or None
             description = self.entries['Description:'].get() or None
             

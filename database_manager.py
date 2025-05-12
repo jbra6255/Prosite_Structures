@@ -992,7 +992,52 @@ class DatabaseManager:
         except sqlite3.Error as e:
             print(f"Error getting group structures: {e}")
             return []
-        
+
+    def get_all_pipe_types(self) -> List[str]:
+        """Get all pipe types sorted alphabetically"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT name FROM pipe_types
+                    ORDER BY name
+                ''')
+                return [row[0] for row in cursor.fetchall()]
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting pipe types: {e}", exc_info=True)
+            return []
+
+    def add_pipe_type(self, name: str) -> bool:
+        """Add a new pipe type"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                cursor.execute('''
+                    INSERT INTO pipe_types (name, created_at, updated_at)
+                    VALUES (?, ?, ?)
+                ''', (name, now, now))
+                return True
+        except sqlite3.IntegrityError:
+            self.logger.warning(f"Pipe type '{name}' already exists")
+            return False
+        except sqlite3.Error as e:
+            self.logger.error(f"Error adding pipe type: {e}", exc_info=True)
+            return False
+
+    def delete_pipe_type(self, name: str) -> bool:
+        """Delete a pipe type"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    DELETE FROM pipe_types WHERE name = ?
+                ''', (name,))
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.logger.error(f"Error deleting pipe type: {e}", exc_info=True)
+            return False
+
     def row_to_structure(self, row) -> Structure:
         """
         Convert database row to Structure object using a more robust approach.

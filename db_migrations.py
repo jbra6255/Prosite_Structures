@@ -219,6 +219,45 @@ def create_migrations(logger):
         add_frame_type_column_down
     )
     
+    def add_pipe_types_configuration(conn):
+        """Create pipe types configuration table and add initial pipe types"""
+        cursor = conn.cursor()
+        
+        # Create pipe types table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS pipe_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL
+            )
+        ''')
+        
+        # Add default pipe types
+        default_pipe_types = [
+            "RCP CL3 T&G",
+            "RCP CL3 O-Ring",
+            "RCP CL3 NCDOT",
+            "RCP CL4 T&G",
+            "RCP CL4 O-Ring",
+            "RCP CL4 NCDOT"
+        ]
+        
+        now = datetime.now().isoformat()
+        for pipe_type in default_pipe_types:
+            cursor.execute('''
+                INSERT OR IGNORE INTO pipe_types (name, created_at, updated_at)
+                VALUES (?, ?, ?)
+            ''', (pipe_type, now, now))
+
+    # Add this to your create_migrations function:
+    migrations.register_migration(
+        3, 
+        "Add pipe types configuration",
+        add_pipe_types_configuration,
+        None  # No down migration
+    )
+
     # Add more migrations here as needed
     
     return migrations
