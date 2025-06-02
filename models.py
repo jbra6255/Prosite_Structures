@@ -20,24 +20,6 @@ class Structure:
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
-    def __post_init__(self):
-        # Store the initial description value
-        self._description = self.description
-        # We'll keep the original description attribute to maintain compatibility
-        # but we'll use _description for the property implementation
-
-    @property
-    def description(self) -> Optional[str]:
-        """Get the description value from the private backing field"""
-        # This will be called for reads after initialization
-        return self._description
-
-    @description.setter
-    def description(self, value: Optional[str]):
-        """Set the description value in the private backing field"""
-        # This will be called for writes after initialization
-        self._description = value
 
     @property
     def total_drop(self) -> float:

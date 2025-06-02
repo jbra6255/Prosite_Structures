@@ -7,7 +7,6 @@ import ttkbootstrap.dialogs as dialogs
 from database_manager import DatabaseManager
 from typing import List, Dict, Optional
 from models import Structure, StructureGroup, StructureComponent
-from logger import AppLogger
 
 # Debug output - can be removed in production
 print("DEBUG - Structure fields:", [field for field in dir(Structure) if not field.startswith('__')])

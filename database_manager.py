@@ -1,5 +1,4 @@
 import models
-print("Models module location:", models.__file__)
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import sqlite3
@@ -35,7 +34,7 @@ class DatabaseManager:
         self.initialize_database()
         
         # Setup and run migrations
-        self.migrations = create_migrations(self.logger)
+        self.migrations = create_migrations(self.db_path, self.logger)
         current_version = self.migrations.get_current_version()
         self.migrations.migrate()  # Migrate to latest version
         latest_version = self.migrations.get_current_version()

@@ -170,9 +170,9 @@ def column_exists(conn, table, column):
 
 # Define our migrations for the structures database
 
-def create_migrations(logger):
+def create_migrations(db_path, logger):
     """Create all migrations for the application"""
-    migrations = DatabaseMigration("structures.db", logger)
+    migrations = DatabaseMigration(db_path, logger)
     
     # Migration 1: Add description column to structures table
     def add_description_column_up(conn):
