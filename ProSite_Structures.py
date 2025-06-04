@@ -466,7 +466,7 @@ class StructureManagementApp:
         treeview_frame.rowconfigure(0, weight=1)
 
         # Structure treeview
-        columns = ("ID", "TYPE", "RIM ELEVATION", "INV. IN", "INV. OUT", "DESCRIPTION")
+        columns = ("ID", "TYPE", "RIM ELEVATION", "INV. OUT", "DEPTH", "UPSTREAM", "SLOPE", "DESCRIPTION")
         self.structure_tree = ttk.Treeview(
             treeview_frame, 
             columns=columns,
@@ -479,12 +479,14 @@ class StructureManagementApp:
             self.structure_tree.heading(col, text=col)
 
         # Set column widths and alignment
-        self.structure_tree.column("ID", width=80, anchor="center")
+        self.structure_tree.column("ID", width=100, anchor="center")
         self.structure_tree.column("TYPE", width=60, anchor="center")
-        self.structure_tree.column("RIM ELEVATION", width=90, anchor="center")
-        self.structure_tree.column("INV. IN", width=80, anchor="center")
+        self.structure_tree.column("RIM ELEVATION", width=100, anchor="center")
         self.structure_tree.column("INV. OUT", width=80, anchor="center")
-        self.structure_tree.column("DESCRIPTION", width=200, anchor="center")    
+        self.structure_tree.column("DEPTH", width=70, anchor="center")
+        self.structure_tree.column("UPSTREAM", width=100, anchor="center")
+        self.structure_tree.column("SLOPE", width=80, anchor="center")
+        self.structure_tree.column("DESCRIPTION", width=150, anchor="center") 
         
         # Add scrollbar
         scrollbar = ttk.Scrollbar(treeview_frame, orient="vertical", command=self.structure_tree.yview)
@@ -1552,7 +1554,7 @@ class StructureManagementApp:
             )
             
     def view_group_structures(self, tree_view, project_id):
-        """View structures in the selected group"""
+        """View structures in the selected group - UPDATED with new columns"""
         selection = tree_view.selection()
         if not selection:
             Messagebox.show_warning("Please select a group", "No Selection")
@@ -1569,7 +1571,7 @@ class StructureManagementApp:
         # Create dialog window
         view_window = ttk.Toplevel(self.root)
         view_window.title(f"Group: {group_name}")
-        view_window.geometry("700x500")
+        view_window.geometry("900x500")  # Made wider for new columns
         
         # Main container with padding
         main_frame = ttk.Frame(view_window, padding=20)
@@ -1583,8 +1585,8 @@ class StructureManagementApp:
             bootstyle="primary"
         ).pack(anchor="w", pady=(0, 20))
         
-        # Structures list
-        columns = ("ID", "Type", "Rim Elevation", "Invert Out", "Total Drop")
+        # Structures list - UPDATED with new columns including SLOPE
+        columns = ("ID", "Type", "Rim Elevation", "Invert Out", "Depth", "Upstream", "Slope")
         structure_tree = ttk.Treeview(
             main_frame,
             columns=columns,
@@ -1600,7 +1602,9 @@ class StructureManagementApp:
         structure_tree.column("Type", width=80)
         structure_tree.column("Rim Elevation", width=120, anchor="e")
         structure_tree.column("Invert Out", width=120, anchor="e")
-        structure_tree.column("Total Drop", width=120, anchor="e")
+        structure_tree.column("Depth", width=80, anchor="e")
+        structure_tree.column("Upstream", width=120, anchor="center")
+        structure_tree.column("Slope", width=80, anchor="center")
         
         # Add a scrollbar
         scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=structure_tree.yview)
@@ -1610,8 +1614,23 @@ class StructureManagementApp:
         structure_tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Populate structures
+        # Create a dictionary for quick lookup of structures (for slope calculation)
+        structure_dict = {s.structure_id: s for s in structures}
+        
+        # Populate structures - UPDATED with depth and slope calculation
         for structure in structures:
+            # Calculate depth
+            if structure.rim_elevation is not None and structure.invert_out_elevation is not None:
+                depth = structure.rim_elevation - structure.invert_out_elevation
+                depth_text = f"{depth:.2f}"
+            else:
+                depth_text = "—"
+            
+            upstream_id = structure.upstream_structure_id if structure.upstream_structure_id else "—"
+            
+            # Calculate slope using the same method as main treeview
+            slope_text = self.calculate_slope(structure, structure_dict)
+            
             structure_tree.insert(
                 "",
                 "end",
@@ -1620,7 +1639,9 @@ class StructureManagementApp:
                     structure.structure_type,
                     f"{structure.rim_elevation:.2f}",
                     f"{structure.invert_out_elevation:.2f}",
-                    f"{structure.total_drop:.2f}"
+                    depth_text,
+                    upstream_id,
+                    slope_text
                 )
             )
         
@@ -2356,7 +2377,7 @@ class StructureManagementApp:
             self.entries['Description:'].insert(0, structure.description)
 
     def load_structures(self):
-        """Load structures from database into treeview with additional columns"""
+        """Load structures from database into treeview with depth calculation, upstream sorting, and slope calculation"""
         # Clear existing items in the treeview
         for item in self.structure_tree.get_children():
             self.structure_tree.delete(item)
@@ -2369,20 +2390,38 @@ class StructureManagementApp:
         # Get structures for this project
         structures = self.db.get_all_structures(project.id)
         
-        # Add to treeview with improved styling and additional columns
-        for structure in structures:
-            # For invert in, you'll need to get the connecting structures
-            invert_in_values = self.get_invert_in_values(structure.structure_id, project.id)
-            invert_in_text = ", ".join([f"{val:.2f}" for val in invert_in_values]) if invert_in_values else "—"
-            
+        if not structures:
+            return
+        
+        # Create a dictionary for quick lookup of structures
+        structure_dict = {s.structure_id: s for s in structures}
+        
+        # Sort structures by upstream connections (downstream to upstream flow)
+        sorted_structures = self.sort_structures_by_flow(structures)
+        
+        # Add to treeview with new columns including slope
+        for structure in sorted_structures:
             # Format values for display
             rim_elevation = f"{structure.rim_elevation:.2f}" if structure.rim_elevation is not None else "—"
             invert_out = f"{structure.invert_out_elevation:.2f}" if structure.invert_out_elevation is not None else "—"
             
-            # Use the description field directly
+            # Calculate depth (Rim Elevation - Invert Out Elevation)
+            if structure.rim_elevation is not None and structure.invert_out_elevation is not None:
+                depth = structure.rim_elevation - structure.invert_out_elevation
+                depth_text = f"{depth:.2f}"
+            else:
+                depth_text = "—"
+            
+            # Get upstream structure ID
+            upstream_id = structure.upstream_structure_id if structure.upstream_structure_id else "—"
+            
+            # Calculate slope
+            slope_text = self.calculate_slope(structure, structure_dict)
+            
+            # Use the pipe_type field for description
             description = structure.pipe_type or ""
             
-            # Add to treeview with ID, Type, Rim Elevation, Inv. In, Inv. Out, Description
+            # Add to treeview with all columns including DEPTH, UPSTREAM, and SLOPE
             self.structure_tree.insert(
                 "", 
                 "end", 
@@ -2390,8 +2429,10 @@ class StructureManagementApp:
                     structure.structure_id, 
                     structure.structure_type, 
                     rim_elevation,
-                    invert_in_text,
                     invert_out,
+                    depth_text,
+                    upstream_id,
+                    slope_text,
                     description
                 )
             )
@@ -2486,19 +2527,102 @@ class StructureManagementApp:
         except Exception as e:
             Messagebox.show_error(f"An error occurred: {str(e)}", "System Error")
 
-    def get_invert_in_values(self, structure_id, project_id):
-        """Get all invert in elevations for a structure by finding upstream structures"""
-        invert_in_values = []
+    def sort_structures_by_flow(self, structures):
+        """
+        Sort structures by flow direction (downstream to upstream).
+        Structures with no upstream_structure_id come first (most downstream),
+        followed by their upstream connections in order.
+        """
+        if not structures:
+            return []
         
-        # Get all structures that have this structure as their downstream connection
-        upstream_structures = self.db.get_upstream_structures(structure_id, project_id)
+        # Create a dictionary for quick lookup
+        structure_dict = {s.structure_id: s for s in structures}
+        sorted_list = []
+        processed = set()
         
-        # Get their invert out elevations (which flow into this structure)
-        for upstream in upstream_structures:
-            if upstream.invert_out_elevation is not None:
-                invert_in_values.append(upstream.invert_out_elevation)
+        def add_structure_and_upstream(structure):
+            """Recursively add structure and its upstream chain"""
+            if structure.structure_id in processed:
+                return
+            
+            # Add current structure
+            sorted_list.append(structure)
+            processed.add(structure.structure_id)
+            
+            # Find and add upstream structure if it exists
+            if structure.upstream_structure_id and structure.upstream_structure_id in structure_dict:
+                upstream_structure = structure_dict[structure.upstream_structure_id]
+                add_structure_and_upstream(upstream_structure)
         
-        return invert_in_values
+        # Start with structures that have no downstream connections
+        # (structures that are not referenced as upstream by any other structure)
+        downstream_structures = []
+        upstream_refs = {s.upstream_structure_id for s in structures if s.upstream_structure_id}
+        
+        for structure in structures:
+            if structure.structure_id not in upstream_refs:
+                # This structure is not referenced as upstream by any other structure
+                # It's likely a downstream/outlet structure
+                downstream_structures.append(structure)
+        
+        # If no clear downstream structures found, start with structures that have no upstream
+        if not downstream_structures:
+            downstream_structures = [s for s in structures if not s.upstream_structure_id]
+        
+        # Process each downstream structure and its upstream chain
+        for structure in downstream_structures:
+            add_structure_and_upstream(structure)
+        
+        # Add any remaining structures that weren't processed
+        # (handles cases with circular references or orphaned structures)
+        for structure in structures:
+            if structure.structure_id not in processed:
+                sorted_list.append(structure)
+                processed.add(structure.structure_id)
+        
+        return sorted_list
+
+    def calculate_slope(self, structure, structure_dict):
+        """
+        Calculate slope using the formula:
+        (upstream inv out - (Downstream Inv out + Drop vf)) / Pipe length
+        
+        Returns formatted slope text or "—" if calculation cannot be performed
+        """
+        # Check if we have an upstream structure
+        if not structure.upstream_structure_id:
+            return "—"
+        
+        # Check if upstream structure exists in our data
+        if structure.upstream_structure_id not in structure_dict:
+            return "—"
+        
+        upstream_structure = structure_dict[structure.upstream_structure_id]
+        
+        # Check if we have all required values
+        if (structure.invert_out_elevation is None or 
+            upstream_structure.invert_out_elevation is None or 
+            structure.pipe_length is None or 
+            structure.pipe_length <= 0):
+            return "—"
+        
+        # Get drop value (vert_drop), default to 0 if not provided
+        drop_vf = structure.vert_drop if structure.vert_drop is not None else 0
+        
+        try:
+            # Calculate slope: (upstream inv out - (Downstream Inv out + Drop vf)) / Pipe length
+            downstream_adjusted = structure.invert_out_elevation + drop_vf
+            elevation_difference = upstream_structure.invert_out_elevation - downstream_adjusted
+            slope = elevation_difference / structure.pipe_length
+            
+            # Format as percentage with 3 decimal places
+            slope_percentage = slope * 100
+            return f"{slope_percentage:.3f}%"
+            
+        except (TypeError, ZeroDivisionError):
+            return "—"
+
 
     def create_group(self):
         """Create a new structure group and add selected structures to it"""
