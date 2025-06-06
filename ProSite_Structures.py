@@ -2616,13 +2616,14 @@ class StructureManagementApp:
             elevation_difference = upstream_structure.invert_out_elevation - downstream_adjusted
             slope = elevation_difference / structure.pipe_length
             
-            # Format as percentage with 3 decimal places
+            # Format as percentage with 2 decimal places, rounded to nearest hundredth
             slope_percentage = slope * 100
-            return f"{slope_percentage:.3f}%"
+            # Round to 2 decimal places (nearest hundredth)
+            rounded_slope = round(slope_percentage, 2)
+            return f"{rounded_slope:.2f}%"
             
         except (TypeError, ZeroDivisionError):
             return "—"
-
 
     def create_group(self):
         """Create a new structure group and add selected structures to it"""
@@ -2765,14 +2766,15 @@ class StructureManagementApp:
             report_text.insert(tk.END, f"  Invert Out: {structure.invert_out_elevation}\n", "data")
             report_text.insert(tk.END, f"  Total Drop: {structure.total_drop}\n", "data")
             
+            if structure.upstream_structure_id:
+                report_text.insert(tk.END, f"  Upstream Structure: {structure.upstream_structure_id}\n", "data")
             if structure.pipe_length:
                 report_text.insert(tk.END, f"  Pipe Length: {structure.pipe_length}\n", "data")
             if structure.pipe_diameter:
                 report_text.insert(tk.END, f"  Pipe Diameter: {structure.pipe_diameter}\n", "data")
             if structure.pipe_type:
                 report_text.insert(tk.END, f"  Pipe Type: {structure.pipe_type}\n", "data")
-            if structure.upstream_structure_id:
-                report_text.insert(tk.END, f"  Upstream Structure: {structure.upstream_structure_id}\n", "data")
+            
         
         # Make text readonly
         report_text.configure(state='disabled')

@@ -233,14 +233,18 @@ def create_migrations(db_path, logger):
             )
         ''')
         
-        # Add default pipe types
+        # Add default pipe types - UPDATED with additional types
         default_pipe_types = [
             "RCP CL3 T&G",
             "RCP CL3 O-Ring",
             "RCP CL3 NCDOT",
             "RCP CL4 T&G",
             "RCP CL4 O-Ring",
-            "RCP CL4 NCDOT"
+            "RCP CL4 NCDOT",
+            "HDPE (SWALL)",
+            "HDPE (DWALL)",
+            "PVC SCH40",
+            "PVC SCH80"
         ]
         
         now = datetime.now().isoformat()
