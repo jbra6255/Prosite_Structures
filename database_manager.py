@@ -302,7 +302,157 @@ class DatabaseManager:
         except sqlite3.Error as e:
             self.logger.error(f"Error adding structure component: {e}", exc_info=True)
             return False
+
+    def add_structure_run(self, structure: Structure, project_id: int) -> bool:
+        """Add a new run to an existing structure or create new structure"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if structure exists
+                cursor.execute('''
+                    SELECT COUNT(*) FROM structures 
+                    WHERE structure_id = ? AND project_id = ?
+                ''', (structure.structure_id, project_id))
+                
+                structure_exists = cursor.fetchone()[0] > 0
+                
+                # If structure doesn't exist, this becomes the primary run
+                if not structure_exists:
+                    structure.is_primary_run = True
+                    structure.run_designation = structure.run_designation or "A"
+                
+                # Use the regular add_structure method since it's now updated
+                return self.add_structure(structure, project_id)
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Error adding structure run: {e}", exc_info=True)
+            return False
+
+    def get_structure_runs_grouped(self, project_id: int) -> Dict[str, List[Structure]]:
+        """Get all structures grouped by structure_id"""
+        try:
+            structures = self.get_all_structures(project_id)
+            grouped = {}
             
+            for structure in structures:
+                if structure.structure_id not in grouped:
+                    grouped[structure.structure_id] = []
+                grouped[structure.structure_id].append(structure)
+            
+            # Sort runs within each structure by run_designation
+            for structure_id in grouped:
+                grouped[structure_id].sort(key=lambda s: s.run_designation or "A")
+            
+            return grouped
+        except Exception as e:
+            self.logger.error(f"Error grouping structure runs: {e}", exc_info=True)
+            return {}
+
+    def get_primary_structure(self, structure_id: str, project_id: int) -> Optional[Structure]:
+        """Get the primary run for a structure (for main display)"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # First try to get the run marked as primary
+                cursor.execute('''
+                    SELECT * FROM structures 
+                    WHERE structure_id = ? AND project_id = ? AND is_primary_run = 1
+                    LIMIT 1
+                ''', (structure_id, project_id))
+                
+                row = cursor.fetchone()
+                if row:
+                    return self.row_to_structure(row)
+                
+                # If no primary run, get the first run (usually "A")
+                cursor.execute('''
+                    SELECT * FROM structures 
+                    WHERE structure_id = ? AND project_id = ?
+                    ORDER BY run_designation
+                    LIMIT 1
+                ''', (structure_id, project_id))
+                
+                row = cursor.fetchone()
+                if row:
+                    return self.row_to_structure(row)
+                
+                return None
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting primary structure: {e}", exc_info=True)
+            return None
+
+    def set_primary_run(self, structure_id: str, run_designation: str, project_id: int) -> bool:
+        """Set which run should be the primary run for a structure"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # First, unset all primary flags for this structure
+                cursor.execute('''
+                    UPDATE structures 
+                    SET is_primary_run = 0 
+                    WHERE structure_id = ? AND project_id = ?
+                ''', (structure_id, project_id))
+                
+                # Then set the specified run as primary
+                cursor.execute('''
+                    UPDATE structures 
+                    SET is_primary_run = 1 
+                    WHERE structure_id = ? AND run_designation = ? AND project_id = ?
+                ''', (structure_id, run_designation, project_id))
+                
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.logger.error(f"Error setting primary run: {e}", exc_info=True)
+            return False
+
+    def delete_structure_run(self, structure_id: str, run_designation: str, project_id: int) -> bool:
+        """Delete a specific run of a structure"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if this is the only run for the structure
+                cursor.execute('''
+                    SELECT COUNT(*) FROM structures 
+                    WHERE structure_id = ? AND project_id = ?
+                ''', (structure_id, project_id))
+                
+                count = cursor.fetchone()[0]
+                if count <= 1:
+                    # If it's the last run, delete all related records
+                    return self.delete_structure(structure_id, project_id)
+                
+                # Delete the specific run
+                cursor.execute('''
+                    DELETE FROM structures 
+                    WHERE structure_id = ? AND run_designation = ? AND project_id = ?
+                ''', (structure_id, run_designation, project_id))
+                
+                # If we deleted the primary run, make another run primary
+                if cursor.rowcount > 0:
+                    cursor.execute('''
+                        SELECT COUNT(*) FROM structures 
+                        WHERE structure_id = ? AND project_id = ? AND is_primary_run = 1
+                    ''', (structure_id, project_id))
+                    
+                    if cursor.fetchone()[0] == 0:
+                        # No primary run left, make the first one primary
+                        cursor.execute('''
+                            UPDATE structures 
+                            SET is_primary_run = 1 
+                            WHERE structure_id = ? AND project_id = ?
+                            ORDER BY run_designation
+                            LIMIT 1
+                        ''', (structure_id, project_id))
+                
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.logger.error(f"Error deleting structure run: {e}", exc_info=True)
+            return False
+
     def update_component_status(self, component_id: int, status: str, notes: str = None,
                             actual_delivery_date: datetime = None) -> bool:
         """Update a component's status"""
@@ -689,21 +839,31 @@ class DatabaseManager:
             print(f"Error deleting project: {e}")
             return False
 
-    def get_structure(self, structure_id: str, project_id: int) -> Optional[Structure]:
-        """Retrieve a structure by its ID and project"""
+    def get_structure(self, structure_id: str, project_id: int, run_designation: str = None) -> Optional[Structure]:
+        """Retrieve a structure by its ID, project, and optionally run designation"""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute('''
-                    SELECT * FROM structures 
-                    WHERE structure_id = ? AND project_id = ?
-                ''', (structure_id, project_id))
+                
+                if run_designation:
+                    cursor.execute('''
+                        SELECT * FROM structures 
+                        WHERE structure_id = ? AND project_id = ? AND run_designation = ?
+                    ''', (structure_id, project_id, run_designation))
+                else:
+                    # Get the primary run if no run specified
+                    cursor.execute('''
+                        SELECT * FROM structures 
+                        WHERE structure_id = ? AND project_id = ? AND is_primary_run = 1
+                        LIMIT 1
+                    ''', (structure_id, project_id))
+                
                 row = cursor.fetchone()
                 if row:
                     return self.row_to_structure(row)
-            return None
+                return None
         except sqlite3.Error as e:
-            print(f"Error getting structure: {e}")
+            self.logger.error(f"Error getting structure: {e}", exc_info=True)
             return None
 
     def get_upstream_structures(self, structure_id: str, project_id: int) -> List[Structure]:
@@ -764,21 +924,24 @@ class DatabaseManager:
                 
                 cursor.execute('''
                     INSERT INTO structures (
-                        structure_id, structure_type, rim_elevation, invert_out_elevation, 
-                        invert_out_angle, vert_drop, upstream_structure_id, pipe_length, 
-                        pipe_diameter, pipe_type, frame_type, description, project_id, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        structure_id, structure_type, rim_elevation, invert_out_elevation,
+                        run_designation, invert_out_angle, vert_drop, upstream_structure_id,
+                        upstream_run_designation, pipe_length, pipe_diameter, pipe_type,
+                        frame_type, description, is_primary_run, project_id, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     structure.structure_id, structure.structure_type, structure.rim_elevation,
-                    structure.invert_out_elevation, structure.invert_out_angle, structure.vert_drop,
-                    structure.upstream_structure_id, structure.pipe_length, structure.pipe_diameter,
-                    structure.pipe_type, structure.frame_type, structure.description, project_id, now, now
+                    structure.invert_out_elevation, structure.run_designation, structure.invert_out_angle,
+                    structure.vert_drop, structure.upstream_structure_id, structure.upstream_run_designation,
+                    structure.pipe_length, structure.pipe_diameter, structure.pipe_type,
+                    structure.frame_type, structure.description, structure.is_primary_run,
+                    project_id, now, now
                 ))
                 return True
         except IntegrityError as e:
             # Handle specific constraint violations
             if "UNIQUE constraint failed" in str(e):
-                self.logger.warning(f"Structure ID '{structure.structure_id}' already exists in project {project_id}")
+                self.logger.warning(f"Structure run '{structure.structure_id}-{structure.run_designation}' already exists in project {project_id}")
                 return False
             elif "FOREIGN KEY constraint failed" in str(e):
                 self.logger.error(f"Foreign key constraint violation: {e}, structure: {structure.structure_id}")
@@ -794,8 +957,6 @@ class DatabaseManager:
             # Handle any other SQLite errors
             self.logger.error(f"Error adding structure {structure.structure_id}: {e}", exc_info=True)
             return False
-        
-        self.load_structures()
 
     def update_structure(self, structure: Structure, project_id: int) -> bool:
         """Update an existing structure in the database"""
@@ -809,38 +970,43 @@ class DatabaseManager:
                         structure_type = ?,
                         rim_elevation = ?,
                         invert_out_elevation = ?,
+                        run_designation = ?,
                         invert_out_angle = ?,
                         vert_drop = ?,
                         upstream_structure_id = ?,
+                        upstream_run_designation = ?,
                         pipe_length = ?,
                         pipe_diameter = ?,
                         pipe_type = ?,
                         frame_type = ?,
                         description = ?,
+                        is_primary_run = ?,
                         updated_at = ?
-                    WHERE structure_id = ? AND project_id = ?
+                    WHERE structure_id = ? AND run_designation = ? AND project_id = ?
                 ''', (
                     structure.structure_type,
                     structure.rim_elevation,
                     structure.invert_out_elevation,
+                    structure.run_designation,
                     structure.invert_out_angle,
                     structure.vert_drop,
                     structure.upstream_structure_id,
+                    structure.upstream_run_designation,
                     structure.pipe_length,
                     structure.pipe_diameter,
                     structure.pipe_type,
                     structure.frame_type,
                     structure.description,
+                    structure.is_primary_run,
                     now,
                     structure.structure_id,
+                    structure.run_designation,
                     project_id
                 ))
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
-            print(f"Error updating structure: {e}")
+            self.logger.error(f"Error updating structure: {e}", exc_info=True)
             return False
-        
-        self.load_structures()
 
     def delete_structure(self, structure_id: str, project_id: int) -> bool:
         """Delete a structure from the database"""
@@ -1036,56 +1202,37 @@ class DatabaseManager:
         except sqlite3.Error as e:
             self.logger.error(f"Error deleting pipe type: {e}", exc_info=True)
             return False
-
+        
     def row_to_structure(self, row) -> Structure:
         """
-        Convert database row to Structure object using a more robust approach.
-        
-        This method dynamically maps database columns to structure attributes
-        based on column position (index) in the result set.
+        Convert database row to Structure object - CORRECTED column mapping
         """
-        # Get column names from cursor description if available
-        column_names = []
-        if hasattr(row, 'cursor') and hasattr(row.cursor, 'description'):
-            column_names = [desc[0] for desc in row.cursor.description]
-        
-        # Create dictionary mapping column names or indices to values
-        data = {}
-        
-        # First, handle the case where row is a tuple (standard sqlite result)
-        if isinstance(row, tuple):
-            # These are standard columns that should always be present
-            # Map by position to ensure backward compatibility
-            standard_fields = [
+        # Let's inspect the actual database structure first to get the correct column order
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                # Get the actual column names and their positions
+                cursor.execute("PRAGMA table_info(structures)")
+                columns_info = cursor.fetchall()
+                column_names = [col[1] for col in columns_info]  # col[1] is the column name
+        except sqlite3.Error:
+            # Fallback to expected order if we can't get column info
+            column_names = [
                 'id', 'structure_id', 'structure_type', 'rim_elevation', 
                 'invert_out_elevation', 'invert_out_angle', 'vert_drop',
-                'upstream_structure_id', 'pipe_length', 'pipe_diameter', 'pipe_type'
+                'upstream_structure_id', 'pipe_length', 'pipe_diameter', 'pipe_type',
+                'group_name', 'project_id', 'created_at', 'updated_at',
+                'frame_type', 'description', 'run_designation', 'upstream_run_designation', 'is_primary_run'
             ]
-            
-            # Map all available standard fields
-            for i, field in enumerate(standard_fields):
-                if i < len(row):
-                    data[field] = row[i]
-            
-            # Check for additional columns that might be present in newer schema versions
-            # If we have column names, use them for mapping
-            if column_names:
-                for i, col_name in enumerate(column_names):
-                    if col_name not in standard_fields and i < len(row):
-                        data[col_name] = row[i]
-            else:
-                # If no column names, try to map remaining columns by position
-                # Add special handling for known extended fields
-                extended_fields = ['frame_type', 'description', 'group_name', 'created_at', 'updated_at']
-                offset = len(standard_fields)
-                
-                for i, field in enumerate(extended_fields):
-                    if offset + i < len(row):
-                        data[field] = row[offset + i]
         
-        # Handle dictionaries (e.g., for Row objects in some SQL libraries)
-        elif isinstance(row, dict):
-            data = row.copy()
+        # Create dictionary mapping column names to values
+        data = {}
+        
+        if isinstance(row, tuple):
+            # Map each column name to its corresponding value
+            for i, column_name in enumerate(column_names):
+                if i < len(row):
+                    data[column_name] = row[i]
         
         # Create the structure with all available data
         kwargs = {
@@ -1099,23 +1246,16 @@ class DatabaseManager:
             'upstream_structure_id': data.get('upstream_structure_id'),
             'pipe_length': data.get('pipe_length'),
             'pipe_diameter': data.get('pipe_diameter'),
-            'pipe_type': data.get('pipe_type')
+            'pipe_type': data.get('pipe_type'),
+            'frame_type': data.get('frame_type'),
+            'description': data.get('description'),
+            'group_name': data.get('group_name'),
+            'run_designation': data.get('run_designation', 'A'),  # Default to 'A' if not present
+            'upstream_run_designation': data.get('upstream_run_designation'),
+            'is_primary_run': bool(data.get('is_primary_run', True)),  # Default to True if not present
+            'created_at': self.safe_date_parse(data.get('created_at')),
+            'updated_at': self.safe_date_parse(data.get('updated_at'))
         }
-        
-        # Add optional fields that might be present in newer schema versions
-        if 'frame_type' in data:
-            kwargs['frame_type'] = data.get('frame_type')
-        if 'description' in data:
-            # Pass description as a normal parameter now
-            kwargs['description'] = data.get('description')
-        if 'group_name' in data:
-            kwargs['group_name'] = data.get('group_name')
-        
-        # Handle timestamps
-        if 'created_at' in data:
-            kwargs['created_at'] = self.safe_date_parse(data.get('created_at'))
-        if 'updated_at' in data:
-            kwargs['updated_at'] = self.safe_date_parse(data.get('updated_at'))
         
         # Create and return the structure
         structure = Structure(**kwargs)
