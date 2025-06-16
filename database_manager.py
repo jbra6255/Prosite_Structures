@@ -43,6 +43,12 @@ class DatabaseManager:
             self.logger.info(f"Database migrated from version {current_version} to {latest_version}")
         else:
             self.logger.info(f"Database is at the latest version: {current_version}")
+
+        # Verify Database Table Consistancy
+        if not self.verify_table_consistency():
+            self.logger.warning("Table schema verification failed - some operations may not work correctly")
+        else:
+            self.logger.info("Table schema verification passed")
         
         # Initialize default component types
         self.initialize_component_types()
@@ -1205,61 +1211,145 @@ class DatabaseManager:
         
     def row_to_structure(self, row) -> Structure:
         """
-        Convert database row to Structure object - CORRECTED column mapping
+        Convert database row to Structure object with robust column mapping
         """
-        # Let's inspect the actual database structure first to get the correct column order
+        if not row:
+            return None
+        
+        try:
+            # Get actual column information from database
+            column_info = self._get_structures_table_columns()
+            if not column_info:
+                self.logger.error("Could not retrieve table column information")
+                return None
+            
+            # Create a mapping of column names to values
+            data = {}
+            for i, (column_name, _) in enumerate(column_info):
+                if i < len(row):
+                    data[column_name] = row[i]
+                else:
+                    data[column_name] = None
+            
+            # Create Structure object with explicit mapping and safe defaults
+            structure = Structure(
+                id=data.get('id'),
+                structure_id=data.get('structure_id', ''),
+                structure_type=data.get('structure_type', ''),
+                rim_elevation=self._safe_float_convert(data.get('rim_elevation')),
+                invert_out_elevation=self._safe_float_convert(data.get('invert_out_elevation')),
+                run_designation=data.get('run_designation', 'A'),
+                invert_out_angle=self._safe_int_convert(data.get('invert_out_angle')),
+                vert_drop=self._safe_float_convert(data.get('vert_drop')),
+                upstream_structure_id=data.get('upstream_structure_id'),
+                upstream_run_designation=data.get('upstream_run_designation'),
+                pipe_length=self._safe_float_convert(data.get('pipe_length')),
+                pipe_diameter=self._safe_float_convert(data.get('pipe_diameter')),
+                pipe_type=data.get('pipe_type'),
+                frame_type=data.get('frame_type'),
+                description=data.get('description'),
+                group_name=data.get('group_name'),
+                is_primary_run=bool(data.get('is_primary_run', True)),
+                created_at=self.safe_date_parse(data.get('created_at')),
+                updated_at=self.safe_date_parse(data.get('updated_at'))
+            )
+            
+            return structure
+            
+        except Exception as e:
+            self.logger.error(f"Error converting row to structure: {e}", exc_info=True)
+            self.logger.debug(f"Row data: {row}")
+            return None
+
+    def _get_structures_table_columns(self) -> List[Tuple[str, str]]:
+        """
+        Get column information for the structures table.
+        Returns list of (column_name, column_type) tuples.
+        """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                # Get the actual column names and their positions
                 cursor.execute("PRAGMA table_info(structures)")
                 columns_info = cursor.fetchall()
-                column_names = [col[1] for col in columns_info]  # col[1] is the column name
-        except sqlite3.Error:
-            # Fallback to expected order if we can't get column info
-            column_names = [
-                'id', 'structure_id', 'structure_type', 'rim_elevation', 
-                'invert_out_elevation', 'invert_out_angle', 'vert_drop',
-                'upstream_structure_id', 'pipe_length', 'pipe_diameter', 'pipe_type',
-                'group_name', 'project_id', 'created_at', 'updated_at',
-                'frame_type', 'description', 'run_designation', 'upstream_run_designation', 'is_primary_run'
-            ]
+                # Return (name, type) tuples
+                return [(col[1], col[2]) for col in columns_info]
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting table column info: {e}", exc_info=True)
+            return []
+
+    def _safe_float_convert(self, value) -> Optional[float]:
+        """Safely convert value to float, return None if conversion fails"""
+        if value is None or value == '':
+            return None
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return None
+
+    def _safe_int_convert(self, value) -> Optional[int]:
+        """Safely convert value to int, return None if conversion fails"""
+        if value is None or value == '':
+            return None
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return None
+
+    def _debug_table_structure(self):
+        """Debug method to print current table structure - can be removed in production"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("PRAGMA table_info(structures)")
+                columns_info = cursor.fetchall()
+                
+                self.logger.debug("Current structures table schema:")
+                for i, col in enumerate(columns_info):
+                    self.logger.debug(f"  {i}: {col[1]} ({col[2]}) - NotNull: {col[3]}, Default: {col[4]}, PK: {col[5]}")
+                    
+                # Also check if we can get a sample row
+                cursor.execute("SELECT * FROM structures LIMIT 1")
+                sample_row = cursor.fetchone()
+                if sample_row:
+                    self.logger.debug(f"Sample row length: {len(sample_row)}")
+                    self.logger.debug(f"Expected columns: {len(columns_info)}")
+                    
+        except sqlite3.Error as e:
+            self.logger.error(f"Error debugging table structure: {e}")
+            
+    def verify_table_consistency(self):
+        """
+        Verify that the structures table schema matches expectations.
+        Call this during initialization to catch schema issues early.
+        """
+        expected_columns = [
+            'id', 'structure_id', 'structure_type', 'rim_elevation', 
+            'invert_out_elevation', 'invert_out_angle', 'vert_drop',
+            'upstream_structure_id', 'pipe_length', 'pipe_diameter', 
+            'pipe_type', 'group_name', 'project_id', 'created_at', 
+            'updated_at', 'frame_type', 'description', 'run_designation', 
+            'upstream_run_designation', 'is_primary_run'
+        ]
         
-        # Create dictionary mapping column names to values
-        data = {}
-        
-        if isinstance(row, tuple):
-            # Map each column name to its corresponding value
-            for i, column_name in enumerate(column_names):
-                if i < len(row):
-                    data[column_name] = row[i]
-        
-        # Create the structure with all available data
-        kwargs = {
-            'id': data.get('id'),
-            'structure_id': data.get('structure_id'),
-            'structure_type': data.get('structure_type'),
-            'rim_elevation': data.get('rim_elevation'),
-            'invert_out_elevation': data.get('invert_out_elevation'),
-            'invert_out_angle': data.get('invert_out_angle'),
-            'vert_drop': data.get('vert_drop'),
-            'upstream_structure_id': data.get('upstream_structure_id'),
-            'pipe_length': data.get('pipe_length'),
-            'pipe_diameter': data.get('pipe_diameter'),
-            'pipe_type': data.get('pipe_type'),
-            'frame_type': data.get('frame_type'),
-            'description': data.get('description'),
-            'group_name': data.get('group_name'),
-            'run_designation': data.get('run_designation', 'A'),  # Default to 'A' if not present
-            'upstream_run_designation': data.get('upstream_run_designation'),
-            'is_primary_run': bool(data.get('is_primary_run', True)),  # Default to True if not present
-            'created_at': self.safe_date_parse(data.get('created_at')),
-            'updated_at': self.safe_date_parse(data.get('updated_at'))
-        }
-        
-        # Create and return the structure
-        structure = Structure(**kwargs)
-        return structure
+        try:
+            column_info = self._get_structures_table_columns()
+            actual_columns = [col[0] for col in column_info]
+            
+            missing_columns = set(expected_columns) - set(actual_columns)
+            extra_columns = set(actual_columns) - set(expected_columns)
+            
+            if missing_columns:
+                self.logger.warning(f"Missing expected columns: {missing_columns}")
+            if extra_columns:
+                self.logger.info(f"Extra columns found: {extra_columns}")
+                
+            self.logger.info(f"Table has {len(actual_columns)} columns, expected {len(expected_columns)}")
+            
+            return len(missing_columns) == 0  # Return True if no missing columns
+            
+        except Exception as e:
+            self.logger.error(f"Error verifying table consistency: {e}")
+            return False
 
     def delete_group(self, group_name: str, project_id: int) -> bool:
         """Delete a group and all its memberships"""

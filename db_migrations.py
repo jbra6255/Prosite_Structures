@@ -59,6 +59,18 @@ class DatabaseMigration:
             self.logger.error(f"Failed to get current schema version: {e}", exc_info=True)
             return 0
     
+    def is_migration_applied(self, version: int) -> bool:
+        """Check if a specific migration version has been applied"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT COUNT(*) FROM schema_migrations WHERE version = ?', (version,))
+                result = cursor.fetchone()
+                return result[0] > 0
+        except sqlite3.Error as e:
+            self.logger.error(f"Failed to check migration status: {e}", exc_info=True)
+            return False
+    
     def migrate(self, target_version: int = None):
         """
         Run migrations to reach the target version.
@@ -97,6 +109,11 @@ class DatabaseMigration:
         for migration in pending_migrations:
             version = migration['version']
             name = migration['name']
+            
+            # Skip if already applied (handles cases where migrations were applied manually)
+            if self.is_migration_applied(version):
+                self.logger.info(f"Migration {version} already applied, skipping")
+                continue
             
             self.logger.info(f"Running migration {version}: {name}")
             
@@ -219,6 +236,7 @@ def create_migrations(db_path, logger):
         add_frame_type_column_down
     )
     
+    # Migration 3: Add pipe types configuration
     def add_pipe_types_configuration(conn):
         """Create pipe types configuration table and add initial pipe types"""
         cursor = conn.cursor()
@@ -254,7 +272,6 @@ def create_migrations(db_path, logger):
                 VALUES (?, ?, ?)
             ''', (pipe_type, now, now))
 
-    # Add this to your create_migrations function:
     migrations.register_migration(
         3, 
         "Add pipe types configuration",
@@ -262,6 +279,57 @@ def create_migrations(db_path, logger):
         None  # No down migration
     )
 
-    # Add more migrations here as needed
+    # Migration 4: Add run support for multiple inverts per structure
+    def add_run_support_columns_up(conn):
+        """Add columns to support multiple runs per structure"""
+        cursor = conn.cursor()
+        
+        # Add run designation column
+        if not column_exists(conn, "structures", "run_designation"):
+            logger.info("Adding run_designation column to structures table")
+            cursor.execute("ALTER TABLE structures ADD COLUMN run_designation TEXT DEFAULT 'A'")
+        else:
+            logger.info("run_designation column already exists in structures table")
+        
+        # Add upstream run designation column
+        if not column_exists(conn, "structures", "upstream_run_designation"):
+            logger.info("Adding upstream_run_designation column to structures table")
+            cursor.execute("ALTER TABLE structures ADD COLUMN upstream_run_designation TEXT")
+        else:
+            logger.info("upstream_run_designation column already exists in structures table")
+        
+        # Add is_primary_run column
+        if not column_exists(conn, "structures", "is_primary_run"):
+            logger.info("Adding is_primary_run column to structures table")
+            cursor.execute("ALTER TABLE structures ADD COLUMN is_primary_run INTEGER DEFAULT 1")
+        else:
+            logger.info("is_primary_run column already exists in structures table")
+        
+        # Update existing structures to have proper default values
+        logger.info("Updating existing structures with default run values...")
+        cursor.execute("""
+            UPDATE structures 
+            SET run_designation = 'A', is_primary_run = 1 
+            WHERE run_designation IS NULL OR run_designation = '' OR is_primary_run IS NULL
+        """)
+        
+        rows_updated = cursor.rowcount
+        if rows_updated > 0:
+            logger.info(f"Updated {rows_updated} existing structures with default run values")
+
+    def add_run_support_columns_down(conn):
+        # SQLite doesn't support dropping columns directly
+        # Would need to recreate table without these columns
+        logger.warning("Down migration for run support not implemented (SQLite limitation)")
+        pass
+
+    migrations.register_migration(
+        4,
+        "Add run support for multiple inverts per structure",
+        add_run_support_columns_up,
+        add_run_support_columns_down
+    )
+
+    # Future migrations can be added here with version 5, 6, etc.
     
     return migrations

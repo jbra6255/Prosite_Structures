@@ -2241,7 +2241,7 @@ class StructureManagementApp:
                 structure_type=structure_type,
                 rim_elevation=rim_elevation,
                 invert_out_elevation=invert_out_elevation,
-                invert_out_angle=None,  # You could add this to your form if needed
+                invert_out_angle=None,  # Can be added to form if needed
                 vert_drop=vert_drop,
                 upstream_structure_id=upstream_structure_id,
                 pipe_length=pipe_length,
