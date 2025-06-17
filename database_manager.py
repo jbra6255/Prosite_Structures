@@ -335,6 +335,83 @@ class DatabaseManager:
             self.logger.error(f"Error adding structure run: {e}", exc_info=True)
             return False
 
+    def rename_structure(self, old_structure_id: str, new_structure_id: str, project_id: int) -> bool:
+        """
+        Rename a structure and update all references to it.
+        This is a complex operation that needs to maintain referential integrity.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if old structure exists
+                cursor.execute('''
+                    SELECT COUNT(*) FROM structures 
+                    WHERE structure_id = ? AND project_id = ?
+                ''', (old_structure_id, project_id))
+                
+                if cursor.fetchone()[0] == 0:
+                    self.logger.error(f"Structure {old_structure_id} not found")
+                    return False
+                
+                # Check if new structure ID already exists
+                cursor.execute('''
+                    SELECT COUNT(*) FROM structures 
+                    WHERE structure_id = ? AND project_id = ?
+                ''', (new_structure_id, project_id))
+                
+                if cursor.fetchone()[0] > 0:
+                    self.logger.error(f"Structure {new_structure_id} already exists")
+                    return False
+                
+                # Begin transaction for atomic operation
+                cursor.execute('BEGIN TRANSACTION')
+                
+                try:
+                    # Update the structure itself
+                    cursor.execute('''
+                        UPDATE structures 
+                        SET structure_id = ?, updated_at = ?
+                        WHERE structure_id = ? AND project_id = ?
+                    ''', (new_structure_id, datetime.now().isoformat(), old_structure_id, project_id))
+                    
+                    # Update all references in upstream_structure_id field
+                    cursor.execute('''
+                        UPDATE structures 
+                        SET upstream_structure_id = ?, updated_at = ?
+                        WHERE upstream_structure_id = ? AND project_id = ?
+                    ''', (new_structure_id, datetime.now().isoformat(), old_structure_id, project_id))
+                    
+                    # Update group memberships
+                    cursor.execute('''
+                        UPDATE group_memberships 
+                        SET structure_id = ?
+                        WHERE structure_id = ? AND project_id = ?
+                    ''', (new_structure_id, old_structure_id, project_id))
+                    
+                    # Update structure components
+                    cursor.execute('''
+                        UPDATE structure_components 
+                        SET structure_id = ?, updated_at = ?
+                        WHERE structure_id = ? AND project_id = ?
+                    ''', (new_structure_id, datetime.now().isoformat(), old_structure_id, project_id))
+                    
+                    # Commit the transaction
+                    cursor.execute('COMMIT')
+                    
+                    self.logger.info(f"Successfully renamed structure from {old_structure_id} to {new_structure_id}")
+                    return True
+                    
+                except Exception as e:
+                    # Rollback on any error
+                    cursor.execute('ROLLBACK')
+                    self.logger.error(f"Error during rename transaction: {e}", exc_info=True)
+                    return False
+                    
+        except sqlite3.Error as e:
+            self.logger.error(f"Database error renaming structure: {e}", exc_info=True)
+            return False
+
     def get_structure_runs_grouped(self, project_id: int) -> Dict[str, List[Structure]]:
         """Get all structures grouped by structure_id"""
         try:
