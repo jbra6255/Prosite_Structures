@@ -521,6 +521,13 @@ class StructureManagementApp:
             bootstyle="info-outline",
             command=self.create_group
         ).pack(side="left", padx=2)
+
+        ttk.Button(
+            button_frame, 
+            text="Rename", 
+            bootstyle="warning-outline",
+            command=self.rename_structure_dialog
+        ).pack(side="left", padx=2)
         
         # Right side - Form with scrolling capability
 
@@ -694,6 +701,7 @@ class StructureManagementApp:
         edit_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Edit", menu=edit_menu)
         edit_menu.add_command(label="Delete Selected Structure", command=self.delete_selected_structure)
+        edit_menu.add_command(label="Rename Structure", command=self.rename_structure_dialog)
         edit_menu.add_separator()
         edit_menu.add_command(label="Create Group", command=self.create_group)
         edit_menu.add_command(label="Manage Groups", command=self.manage_groups)
@@ -1413,7 +1421,195 @@ class StructureManagementApp:
     def export_structures(self):
         """Export structures to a file"""
         Messagebox.show_info("Structure export functionality coming soon", "Feature Not Implemented")
+
+    def rename_structure_dialog(self):
+        """Show dialog to rename the selected structure"""
+        # Get selected structure from treeview
+        selection = self.structure_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a structure to rename", "No Selection")
+            return
         
+        # Get current structure ID
+        current_id = self.structure_tree.item(selection[0], "values")[0]
+        
+        # Skip if it's a separator row
+        if not current_id or "─── Run" in current_id:
+            Messagebox.show_warning("Please select a valid structure", "Invalid Selection")
+            return
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            Messagebox.show_error("Could not find current project", "Project Error")
+            return
+        
+        # Create rename dialog
+        rename_window = ttk.Toplevel(self.root)
+        rename_window.title("Rename Structure")
+        rename_window.geometry("450x300")
+        rename_window.resizable(False, False)
+        
+        # Center the window
+        rename_window.transient(self.root)
+        rename_window.grab_set()
+        
+        # Main container with padding
+        main_frame = ttk.Frame(rename_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Rename Structure", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Current structure info
+        info_frame = ttk.Labelframe(main_frame, text="Current Structure", padding=10)
+        info_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            info_frame,
+            text=f"Structure ID: {current_id}",
+            font=("Helvetica", 12, "bold")
+        ).pack(anchor="w")
+        
+        # Get structure details for display
+        structure = self.db.get_structure(current_id, project.id)
+        if structure:
+            ttk.Label(
+                info_frame,
+                text=f"Type: {structure.structure_type}",
+                font=("Helvetica", 10)
+            ).pack(anchor="w")
+            ttk.Label(
+                info_frame,
+                text=f"Rim Elevation: {structure.rim_elevation}",
+                font=("Helvetica", 10)
+            ).pack(anchor="w")
+        
+        # New ID input
+        input_frame = ttk.Labelframe(main_frame, text="New Structure ID", padding=10)
+        input_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(input_frame, text="Enter new structure ID:").pack(anchor="w", pady=(0, 5))
+        new_id_entry = ttk.Entry(input_frame, font=("Helvetica", 12))
+        new_id_entry.pack(fill="x", pady=(0, 10))
+        new_id_entry.insert(0, current_id)  # Pre-fill with current ID
+        new_id_entry.select_range(0, tk.END)  # Select all text
+        new_id_entry.focus()
+        
+        # Warning message
+        warning_frame = ttk.Frame(main_frame)
+        warning_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            warning_frame,
+            text="⚠️ Warning: This will update all references to this structure",
+            font=("Helvetica", 10),
+            bootstyle="warning"
+        ).pack(anchor="w")
+        
+        ttk.Label(
+            warning_frame,
+            text="including upstream connections and group memberships.",
+            font=("Helvetica", 9),
+            bootstyle="secondary"
+        ).pack(anchor="w")
+        
+        def perform_rename():
+            new_id = new_id_entry.get().strip()
+            
+            # Validation
+            if not new_id:
+                Messagebox.show_error("Please enter a new structure ID", "Validation Error")
+                new_id_entry.focus()
+                return
+            
+            if new_id == current_id:
+                Messagebox.show_info("No changes needed - new ID is the same as current ID", "No Change")
+                rename_window.destroy()
+                return
+            
+            # Additional validation (you can customize these rules)
+            if len(new_id) < 2:
+                Messagebox.show_error("Structure ID must be at least 2 characters", "Validation Error")
+                new_id_entry.focus()
+                return
+            
+            # Check for invalid characters (customize as needed)
+            import re
+            if not re.match(r'^[A-Za-z0-9_-]+$', new_id):
+                Messagebox.show_error(
+                    "Structure ID can only contain letters, numbers, underscores, and hyphens", 
+                    "Validation Error"
+                )
+                new_id_entry.focus()
+                return
+            
+            # Confirm the rename operation
+            confirm = Messagebox.yesno(
+                f"Are you sure you want to rename '{current_id}' to '{new_id}'?\n\n"
+                f"This will update all references and cannot be easily undone.",
+                "Confirm Rename"
+            )
+            
+            if not confirm:
+                return
+            
+            # Perform the rename
+            success = self.db.rename_structure(current_id, new_id, project.id)
+            
+            if success:
+                Messagebox.show_info(
+                    f"Structure successfully renamed from '{current_id}' to '{new_id}'",
+                    "Rename Successful"
+                )
+                
+                # Close dialog
+                rename_window.destroy()
+                
+                # Refresh the structure list
+                self.load_structures()
+                
+                # Update the form if this structure was selected
+                if self.entries['Structure ID:'].get() == current_id:
+                    self.entries['Structure ID:'].delete(0, tk.END)
+                    self.entries['Structure ID:'].insert(0, new_id)
+                
+                # Try to select the renamed structure in the tree
+                self.select_structure_in_tree(new_id)
+                
+            else:
+                Messagebox.show_error(
+                    f"Failed to rename structure. The new ID '{new_id}' may already exist.",
+                    "Rename Failed"
+                )
+        
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        # Rename button
+        ttk.Button(
+            button_frame,
+            text="Rename Structure",
+            bootstyle="primary",
+            command=perform_rename
+        ).pack(side="left", padx=5)
+        
+        # Cancel button
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=rename_window.destroy
+        ).pack(side="right", padx=5)
+        
+        # Bind Enter key to rename action
+        new_id_entry.bind('<Return>', lambda e: perform_rename())    
     
     def manage_groups(self):
         """Show the group management dialog"""
@@ -2329,14 +2525,26 @@ class StructureManagementApp:
             entry.delete(0, tk.END)
 
     def show_structure_details(self, event):
-        """Show details for selected structure in treeview"""
+        """Show details for selected structure in treeview (updated to handle separators)"""
         # Get selected item
         selection = self.structure_tree.selection()
         if not selection:
             return
+        
+        # Get the values from the selected item
+        values = self.structure_tree.item(selection[0], "values")
+        
+        # Check if this is a separator row
+        if not values or not values[0] or "─── Run" in values[0]:
+            # This is a separator row, don't show details
+            return
             
         # Get structure ID from treeview (first column)
-        structure_id = self.structure_tree.item(selection[0], "values")[0]
+        structure_id = values[0]
+        
+        # Skip if it's an empty spacing row
+        if not structure_id.strip():
+            return
         
         # Get project ID
         project = self.db.get_project_by_name(self.current_project, self.current_user.id)
@@ -2364,20 +2572,16 @@ class StructureManagementApp:
         if structure.pipe_length:
             self.entries['Pipe Length:'].insert(0, str(structure.pipe_length))
         if structure.pipe_diameter:
-            # For the dropdown, we need to set the value
             self.entries['Pipe Diameter:'].set(str(int(structure.pipe_diameter)))
         if structure.pipe_type:
-            # For the dropdown, we need to set the value
             self.entries['Pipe Type:'].set(structure.pipe_type)
         if structure.frame_type:
             self.entries['Frame Type:'].insert(0, structure.frame_type)
-        
-        # Only insert the description once - use the property accessor
         if structure.description:
             self.entries['Description:'].insert(0, structure.description)
 
     def load_structures(self):
-        """Load structures from database into treeview with depth calculation, upstream sorting, and slope calculation"""
+        """Load structures from database into treeview with visual separation between runs"""
         # Clear existing items in the treeview
         for item in self.structure_tree.get_children():
             self.structure_tree.delete(item)
@@ -2396,46 +2600,231 @@ class StructureManagementApp:
         # Create a dictionary for quick lookup of structures
         structure_dict = {s.structure_id: s for s in structures}
         
-        # Sort structures by upstream connections (downstream to upstream flow)
-        sorted_structures = self.sort_structures_by_flow(structures)
+        # Configure tags for visual styling
+        self.setup_treeview_tags()
         
-        # Add to treeview with new columns including slope
-        for structure in sorted_structures:
-            # Format values for display
-            rim_elevation = f"{structure.rim_elevation:.2f}" if structure.rim_elevation is not None else "—"
-            invert_out = f"{structure.invert_out_elevation:.2f}" if structure.invert_out_elevation is not None else "—"
+        # Group structures into runs (connected sequences)
+        runs = self.group_structures_into_runs(structures, structure_dict)
+        
+        # Add runs to treeview with visual separation
+        for run_index, run in enumerate(runs):
+            # Add a separator row for each run (including the first one)
+            self.add_run_separator(run_index)
             
-            # Calculate depth (Rim Elevation - Invert Out Elevation)
-            if structure.rim_elevation is not None and structure.invert_out_elevation is not None:
-                depth = structure.rim_elevation - structure.invert_out_elevation
-                depth_text = f"{depth:.2f}"
-            else:
-                depth_text = "—"
-            
-            # Get upstream structure ID
-            upstream_id = structure.upstream_structure_id if structure.upstream_structure_id else "—"
-            
-            # Calculate slope
-            slope_text = self.calculate_slope(structure, structure_dict)
-            
-            # Use the pipe_type field for description
-            description = structure.pipe_type or ""
-            
-            # Add to treeview with all columns including DEPTH, UPSTREAM, and SLOPE
-            self.structure_tree.insert(
-                "", 
-                "end", 
-                values=(
-                    structure.structure_id, 
-                    structure.structure_type, 
-                    rim_elevation,
-                    invert_out,
-                    depth_text,
-                    upstream_id,
-                    slope_text,
-                    description
-                )
+            # Add structures in this run
+            for structure_index, structure in enumerate(run):
+                self.add_structure_to_treeview(structure, structure_dict, run_index, structure_index)
+
+    def setup_treeview_tags(self):
+        """Configure treeview tags for visual styling"""
+        # Alternating colors for different runs
+        run_colors = [
+            ("#f8f9fa", "#212529"),  # Light gray background, dark text
+            ("#e3f2fd", "#1565c0"),  # Light blue background, blue text
+            ("#f3e5f5", "#7b1fa2"),  # Light purple background, purple text
+            ("#e8f5e8", "#2e7d32"),  # Light green background, green text
+            ("#fff3e0", "#ef6c00"),  # Light orange background, orange text
+            ("#fce4ec", "#c2185b"),  # Light pink background, pink text
+        ]
+        
+        # Configure run tags
+        for i, (bg_color, fg_color) in enumerate(run_colors):
+            self.structure_tree.tag_configure(
+                f"run_{i % len(run_colors)}", 
+                background=bg_color,
+                foreground=fg_color
             )
+        
+        # Configure separator tag
+        self.structure_tree.tag_configure(
+            "separator", 
+            background="#6c757d",
+            foreground="#ffffff",
+            font=("Helvetica", 9, "bold")
+        )
+        
+        # Configure first structure in run tag (slightly darker)
+        for i, (bg_color, fg_color) in enumerate(run_colors):
+            # Make first structure slightly more prominent
+            darker_bg = self.darken_color(bg_color, 0.1)
+            self.structure_tree.tag_configure(
+                f"run_{i % len(run_colors)}_first", 
+                background=darker_bg,
+                foreground=fg_color,
+                font=("Helvetica", 10, "bold")
+            )
+
+    def darken_color(self, hex_color, factor):
+        """Darken a hex color by a given factor (0.0 to 1.0)"""
+        # Remove the '#' if present
+        hex_color = hex_color.lstrip('#')
+        
+        # Convert hex to RGB
+        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        
+        # Darken each component
+        darkened = tuple(int(c * (1 - factor)) for c in rgb)
+        
+        # Convert back to hex
+        return f"#{darkened[0]:02x}{darkened[1]:02x}{darkened[2]:02x}"
+
+    def group_structures_into_runs(self, structures, structure_dict):
+        """Group structures into connected runs (sequences)"""
+        runs = []
+        processed = set()
+        
+        # Find all downstream structures (structures with no upstream connections or 
+        # structures that aren't referenced as upstream by any other structure)
+        upstream_refs = {s.upstream_structure_id for s in structures if s.upstream_structure_id}
+        
+        # Start with structures that are not referenced as upstream by any other
+        downstream_starts = [s for s in structures if s.structure_id not in upstream_refs]
+        
+        # If no clear downstream structures, start with those that have no upstream
+        if not downstream_starts:
+            downstream_starts = [s for s in structures if not s.upstream_structure_id]
+        
+        # Create runs starting from each downstream structure
+        for start_structure in downstream_starts:
+            if start_structure.structure_id in processed:
+                continue
+                
+            # Build the run following upstream connections
+            current_run = []
+            current_structure = start_structure
+            
+            while current_structure and current_structure.structure_id not in processed:
+                current_run.append(current_structure)
+                processed.add(current_structure.structure_id)
+                
+                # Move to upstream structure
+                if current_structure.upstream_structure_id:
+                    current_structure = structure_dict.get(current_structure.upstream_structure_id)
+                else:
+                    current_structure = None
+            
+            if current_run:
+                runs.append(current_run)
+        
+        # Handle any remaining structures (orphaned or circular references)
+        remaining_structures = [s for s in structures if s.structure_id not in processed]
+        for structure in remaining_structures:
+            runs.append([structure])
+            processed.add(structure.structure_id)
+        
+        return runs
+
+    def add_run_separator(self, run_index):
+        """Add a visual separator between runs"""
+        separator_text = f"─── Run {run_index + 1} ───"
+        
+        self.structure_tree.insert(
+            "", 
+            "end", 
+            values=(separator_text, "", "", "", "", "", "", ""),
+            tags=("separator",)
+        )
+
+    def add_structure_to_treeview(self, structure, structure_dict, run_index, structure_index):
+        """Add a single structure to the treeview with appropriate styling"""
+        # Format values for display
+        rim_elevation = f"{structure.rim_elevation:.2f}" if structure.rim_elevation is not None else "—"
+        invert_out = f"{structure.invert_out_elevation:.2f}" if structure.invert_out_elevation is not None else "—"
+        
+        # Calculate depth (Rim Elevation - Invert Out Elevation)
+        if structure.rim_elevation is not None and structure.invert_out_elevation is not None:
+            depth = structure.rim_elevation - structure.invert_out_elevation
+            depth_text = f"{depth:.2f}"
+        else:
+            depth_text = "—"
+        
+        # Get upstream structure ID
+        upstream_id = structure.upstream_structure_id if structure.upstream_structure_id else "—"
+        
+        # Calculate slope
+        slope_text = self.calculate_slope(structure, structure_dict)
+        
+        # Use the pipe_type field for description
+        description = structure.pipe_type or ""
+        
+        # Determine which tag to use
+        color_index = run_index % 6  # Cycle through 6 colors
+        if structure_index == 0:  # First structure in run
+            tag = f"run_{color_index}_first"
+        else:
+            tag = f"run_{color_index}"
+        
+        # Add to treeview with appropriate styling
+        self.structure_tree.insert(
+            "", 
+            "end", 
+            values=(
+                structure.structure_id, 
+                structure.structure_type, 
+                rim_elevation,
+                invert_out,
+                depth_text,
+                upstream_id,
+                slope_text,
+                description
+            ),
+            tags=(tag,)
+        )
+
+    # Alternative method: Add spacing between runs instead of separator rows
+    def load_structures_with_spacing(self):
+        """Alternative version: Load structures with empty rows between runs for spacing"""
+        # Clear existing items in the treeview
+        for item in self.structure_tree.get_children():
+            self.structure_tree.delete(item)
+        
+        # Get current project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+            
+        # Get structures for this project
+        structures = self.db.get_all_structures(project.id)
+        
+        if not structures:
+            return
+        
+        # Create a dictionary for quick lookup of structures
+        structure_dict = {s.structure_id: s for s in structures}
+        
+        # Configure tags for visual styling
+        self.setup_treeview_tags()
+        
+        # Group structures into runs
+        runs = self.group_structures_into_runs(structures, structure_dict)
+        
+        # Add runs to treeview with spacing
+        for run_index, run in enumerate(runs):
+            # Add spacing between runs (except before the first run)
+            if run_index > 0:
+                # Add empty row for spacing
+                self.structure_tree.insert("", "end", values=("", "", "", "", "", "", "", ""))
+            
+            # Add structures in this run
+            for structure_index, structure in enumerate(run):
+                self.add_structure_to_treeview(structure, structure_dict, run_index, structure_index)
+
+    # Method to toggle between different visual styles
+    def toggle_run_visualization(self):
+        """Toggle between different run visualization modes"""
+        if not hasattr(self, 'current_visualization_mode'):
+            self.current_visualization_mode = 'separated'
+        
+        if self.current_visualization_mode == 'separated':
+            self.current_visualization_mode = 'spaced'
+            self.load_structures_with_spacing()
+        else:
+            self.current_visualization_mode = 'separated'
+            self.load_structures()
+        
+        # Update button text or status
+        mode_text = "Separated Runs" if self.current_visualization_mode == 'separated' else "Spaced Runs"
+        print(f"Visualization mode: {mode_text}")
 
     def update_structure(self):
         """Update an existing structure with form data"""
