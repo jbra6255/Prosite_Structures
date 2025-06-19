@@ -31,10 +31,10 @@ class StructureManagementApp:
         self.current_project = None
         
         # Structure type options
-        self.structure_types = ['CB', 'JB', 'DI', 'HW', 'UGDS']
+        self.structure_types = ['CB', 'JB', 'DI', 'HW', 'UGDS', 'NYLO']
         
         # Pipe Sizes (Diameters)
-        self.pipe_sizes = ['15', '18', '24', '30', '36', '42', '48', '54', '60', '66', '72']
+        self.pipe_sizes = ['12', '15', '18', '24', '30', '36', '42', '48', '54', '60', '66', '72']
 
         # Start with login screen
         self.show_login_screen()
@@ -385,10 +385,7 @@ class StructureManagementApp:
         # Create a modern layout with top navbar
         navbar = ttk.Frame(self.root, bootstyle="primary")
         navbar.pack(fill="x")
-        
-        # Create a modern layout with top navbar
-        navbar = ttk.Frame(self.root, bootstyle="primary")
-        navbar.pack(fill="x")
+    
         
         # Project title on left
         ttk.Label(
@@ -426,7 +423,8 @@ class StructureManagementApp:
         # Create notebook for tabs
         self.notebook = ttk.Notebook(main_container)
         self.notebook.grid(row=0, column=0, sticky="nsew")
-        
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_notebook_tab_changed)
+
         # Structures tab
         self.structures_frame = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.structures_frame, text='Structures')
@@ -669,10 +667,6 @@ class StructureManagementApp:
         # Load structures for current project
         self.load_structures()
 
-        # Set initial position of the paned window divider
-        self.root.update_idletasks()
-        paned_window.sashpos(0, 300)
-
          # Add a new tab for component tracking
         self.components_frame = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.components_frame, text='Component Tracking')
@@ -730,83 +724,121 @@ class StructureManagementApp:
         help_menu.add_command(label="About", command=self.show_about)
 
     def setup_components_tab(self):
-        """Set up the component tracking tab"""
+        """Set up the enhanced component tracking tab - FIXED ALIGNMENT AND DATE PICKER"""
+        print("Debug: Setting up components tab")
+
         # Configure components frame for proper expansion
         self.components_frame.columnconfigure(0, weight=1)
         self.components_frame.rowconfigure(0, weight=1)
         
-        # Create PanedWindow for components tab
-        paned_window = ttk.PanedWindow(self.components_frame, orient="horizontal")
-        paned_window.grid(row=0, column=0, sticky="nsew")
+        # Create main container frame
+        main_container = ttk.Frame(self.components_frame)
+        main_container.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        main_container.columnconfigure(0, weight=1)
+        main_container.columnconfigure(1, weight=2)
+        main_container.rowconfigure(0, weight=1)
         
-        # Left side - Structure selection
-        structure_frame = ttk.Labelframe(paned_window, text="Structures")
+        # === LEFT SIDE: Structure Overview ===
+        structure_frame = ttk.Labelframe(main_container, text="Structure Overview", padding=10)
+        structure_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
         structure_frame.columnconfigure(0, weight=1)
-        structure_frame.rowconfigure(0, weight=1)
+        structure_frame.rowconfigure(1, weight=1)
         
-        # Right side - Component details
-        component_frame = ttk.Labelframe(paned_window, text="Components")
-        component_frame.columnconfigure(0, weight=1)
-        component_frame.rowconfigure(0, weight=1)
+        # Filter controls at the top
+        filter_frame = ttk.Frame(structure_frame)
+        filter_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        filter_frame.columnconfigure(1, weight=1)
         
-        # Add both frames to paned window
-        paned_window.add(structure_frame, weight=1)
-        paned_window.add(component_frame, weight=2)
+        ttk.Label(filter_frame, text="Filter:").grid(row=0, column=0, padx=(0, 5), sticky="w")
+        self.component_filter_var = tk.StringVar(value="All Structures")
+        filter_combo = ttk.Combobox(
+            filter_frame, 
+            textvariable=self.component_filter_var, 
+            values=["All Structures", "Complete", "Incomplete", "Not Started", "In Progress"],
+            state="readonly"
+        )
+        filter_combo.grid(row=0, column=1, sticky="ew")
+        filter_combo.bind('<<ComboboxSelected>>', self.filter_structures_by_status)
         
-        # Structure selection treeview
-        structure_select_frame = ttk.Frame(structure_frame)
-        structure_select_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        # Structure treeview frame
+        tree_frame = ttk.Frame(structure_frame)
+        tree_frame.grid(row=1, column=0, sticky="nsew")
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
         
-        structure_select_frame.columnconfigure(0, weight=1)
-        structure_select_frame.rowconfigure(0, weight=1)
-        
-        # Simple structure selection treeview
-        columns = ("ID", "TYPE")
+        # Enhanced structure treeview with status information - FIXED COLUMN ALIGNMENT
+        columns = ("ID", "TYPE", "STATUS", "PROGRESS")
         self.component_structure_tree = ttk.Treeview(
-            structure_select_frame,
+            tree_frame,
             columns=columns,
             show="headings",
             selectmode="browse"
         )
         
-        # Define column headings
-        for col in columns:
-            self.component_structure_tree.heading(col, text=col)
+        # Define column headings and widths - CENTERED ALIGNMENT
+        self.component_structure_tree.heading("ID", text="Structure ID", anchor="center")
+        self.component_structure_tree.heading("TYPE", text="Type", anchor="center")
+        self.component_structure_tree.heading("STATUS", text="Status", anchor="center")
+        self.component_structure_tree.heading("PROGRESS", text="Progress", anchor="center")
         
-        self.component_structure_tree.column("ID", width=150)
-        self.component_structure_tree.column("TYPE", width=100)
+        self.component_structure_tree.column("ID", width=120, anchor="center")
+        self.component_structure_tree.column("TYPE", width=80, anchor="center")
+        self.component_structure_tree.column("STATUS", width=100, anchor="center")
+        self.component_structure_tree.column("PROGRESS", width=80, anchor="center")
+        
+        # Configure status tags for color coding
+        self.component_structure_tree.tag_configure("complete", background="#d4edda", foreground="#155724")
+        self.component_structure_tree.tag_configure("in_progress", background="#fff3cd", foreground="#856404")
+        self.component_structure_tree.tag_configure("not_started", background="#f8d7da", foreground="#721c24")
+        self.component_structure_tree.tag_configure("incomplete", background="#cce7ff", foreground="#004085")
         
         # Add scrollbar
-        scrollbar = ttk.Scrollbar(structure_select_frame, orient="vertical", command=self.component_structure_tree.yview)
-        self.component_structure_tree.configure(yscrollcommand=scrollbar.set)
+        structure_scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.component_structure_tree.yview)
+        self.component_structure_tree.configure(yscrollcommand=structure_scrollbar.set)
         
-        # Place treeview and scrollbar
+        # Pack treeview and scrollbar
         self.component_structure_tree.grid(row=0, column=0, sticky="nsew")
-        scrollbar.grid(row=0, column=1, sticky="ns")
+        structure_scrollbar.grid(row=0, column=1, sticky="ns")
         
-        # Filter option below the treeview
-        filter_frame = ttk.Frame(structure_frame)
-        filter_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        # Structure action buttons
+        structure_action_frame = ttk.Frame(structure_frame)
+        structure_action_frame.grid(row=2, column=0, sticky="ew", pady=(10, 0))
         
-        ttk.Label(filter_frame, text="Filter:").pack(side="left", padx=5)
-        filter_var = tk.StringVar()
-        filter_combo = ttk.Combobox(filter_frame, textvariable=filter_var, values=["All", "With Components", "Missing Components"])
-        filter_combo.pack(side="left", padx=5, fill="x", expand=True)
-        filter_combo.current(0)  # Default to "All"
+        ttk.Button(
+            structure_action_frame,
+            text="Refresh",
+            bootstyle="secondary-outline",
+            command=self.refresh_component_status
+        ).pack(side="left", padx=2)
         
-        # Bind selection event
-        self.component_structure_tree.bind('<<TreeviewSelect>>', self.load_structure_components)
-        filter_combo.bind('<<ComboboxSelected>>', lambda e: self.load_structures_for_components(filter_var.get()))
+        # === RIGHT SIDE: Component Management ===
+        component_frame = ttk.Labelframe(main_container, text="Component Management", padding=10)
+        component_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        component_frame.columnconfigure(0, weight=1)
+        component_frame.rowconfigure(1, weight=1)
         
-        # Component list frame
+        # Selected structure info header
+        self.selected_structure_frame = ttk.Frame(component_frame)
+        self.selected_structure_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        self.selected_structure_frame.columnconfigure(0, weight=1)
+        
+        # Create a sub-frame that aligns with the component treeview
+        info_align_frame = ttk.Frame(self.selected_structure_frame)
+        info_align_frame.grid(row=0, column=0, sticky="ew")
+        info_align_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(info_align_frame, text="Selected Structure:", font=("Helvetica", 10, "bold")).grid(row=0, column=0, sticky="w")
+        self.selected_structure_label = ttk.Label(info_align_frame, text="None", font=("Helvetica", 10))
+        self.selected_structure_label.grid(row=0, column=1, sticky="w", padx=10)
+        
+        # Component list area
         component_list_frame = ttk.Frame(component_frame)
-        component_list_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
-        
+        component_list_frame.grid(row=1, column=0, sticky="nsew")
         component_list_frame.columnconfigure(0, weight=1)
         component_list_frame.rowconfigure(0, weight=1)
         
-        # Component treeview
-        columns = ("TYPE", "STATUS", "ORDERED", "EXPECTED", "DELIVERED", "NOTES")
+        # Enhanced component treeview - FIXED COLUMN ALIGNMENT
+        columns = ("COMPONENT", "STATUS", "ORDERED", "EXPECTED", "DELIVERED", "NOTES")
         self.component_tree = ttk.Treeview(
             component_list_frame,
             columns=columns,
@@ -814,67 +846,98 @@ class StructureManagementApp:
             selectmode="browse"
         )
         
-        # Define column headings
-        for col in columns:
-            self.component_tree.heading(col, text=col)
+        # Define column headings and widths - CENTERED ALIGNMENT
+        self.component_tree.heading("COMPONENT", text="Component Type", anchor="center")
+        self.component_tree.heading("STATUS", text="Status", anchor="center")
+        self.component_tree.heading("ORDERED", text="Order Date", anchor="center")
+        self.component_tree.heading("EXPECTED", text="Expected", anchor="center")
+        self.component_tree.heading("DELIVERED", text="Delivered", anchor="center")
+        self.component_tree.heading("NOTES", text="Notes", anchor="center")
         
-        self.component_tree.column("TYPE", width=100)
-        self.component_tree.column("STATUS", width=100)
-        self.component_tree.column("ORDERED", width=100)
-        self.component_tree.column("EXPECTED", width=100)
-        self.component_tree.column("DELIVERED", width=100)
-        self.component_tree.column("NOTES", width=200)
+        self.component_tree.column("COMPONENT", width=120, anchor="center")
+        self.component_tree.column("STATUS", width=100, anchor="center")
+        self.component_tree.column("ORDERED", width=100, anchor="center")
+        self.component_tree.column("EXPECTED", width=100, anchor="center")
+        self.component_tree.column("DELIVERED", width=100, anchor="center")
+        self.component_tree.column("NOTES", width=200, anchor="center")
         
-        # Add scrollbar
-        scrollbar = ttk.Scrollbar(component_list_frame, orient="vertical", command=self.component_tree.yview)
-        self.component_tree.configure(yscrollcommand=scrollbar.set)
+        # Configure status tags for components
+        self.component_tree.tag_configure("pending", background="#fff3cd", foreground="#856404")
+        self.component_tree.tag_configure("ordered", background="#cce7ff", foreground="#004085")
+        self.component_tree.tag_configure("shipped", background="#e2e3e5", foreground="#383d41")
+        self.component_tree.tag_configure("delivered", background="#d1ecf1", foreground="#0c5460")
+        self.component_tree.tag_configure("installed", background="#d4edda", foreground="#155724")
         
-        # Place treeview and scrollbar
+        # Add scrollbar for components
+        component_scrollbar = ttk.Scrollbar(component_list_frame, orient="vertical", command=self.component_tree.yview)
+        self.component_tree.configure(yscrollcommand=component_scrollbar.set)
+        
+        # Place component treeview and scrollbar
         self.component_tree.grid(row=0, column=0, sticky="nsew")
-        scrollbar.grid(row=0, column=1, sticky="ns")
+        component_scrollbar.grid(row=0, column=1, sticky="ns")
         
-        # Button frame below the component treeview
-        button_frame = ttk.Frame(component_frame)
-        button_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+        # Component action buttons
+        component_action_frame = ttk.Frame(component_frame)
+        component_action_frame.grid(row=2, column=0, sticky="ew", pady=(10, 0))
         
-        # Action buttons
+        # Left side buttons - component management
+        left_buttons = ttk.Frame(component_action_frame)
+        left_buttons.pack(side="left")
+        
         ttk.Button(
-            button_frame,
+            left_buttons,
             text="Add Component",
             bootstyle="success-outline",
-            command=self.add_component
+            command=self.add_component_enhanced
         ).pack(side="left", padx=2)
         
         ttk.Button(
-            button_frame,
-            text="Update Status",
-            bootstyle="primary-outline",
-            command=self.update_component
-        ).pack(side="left", padx=2)
-        
-        ttk.Button(
-            button_frame,
-            text="Delete",
-            bootstyle="danger-outline",
-            command=self.delete_component
-        ).pack(side="left", padx=2)
-        
-        ttk.Button(
-            button_frame,
-            text="Generate Order Report",
+            left_buttons,
+            text="Quick Riser",
             bootstyle="info-outline",
-            command=self.generate_component_report
-        ).pack(side="right", padx=2)
+            command=self.quick_add_riser
+        ).pack(side="left", padx=2)
         
-        # Load structures for component tracking
+        ttk.Button(
+            left_buttons,
+            text="Quick Lid",
+            bootstyle="info-outline",
+            command=self.quick_add_lid
+        ).pack(side="left", padx=2)
+        
+        # Right side buttons - reporting and bulk actions
+        right_buttons = ttk.Frame(component_action_frame)
+        right_buttons.pack(side="right")
+        
+        ttk.Button(
+            right_buttons,
+            text="Generate Report",
+            bootstyle="secondary-outline",
+            command=self.generate_delivery_report
+        ).pack(side="left", padx=2)
+        
+        # Bind events
+        self.component_structure_tree.bind('<<TreeviewSelect>>', self.on_structure_selected)
+        self.component_tree.bind('<Button-3>', self.show_component_context_menu)  # Right-click only
+        
+        # Load initial data
         self.load_structures_for_components()
         
-        # Set initial position of the paned window divider
-        self.root.update_idletasks()
-        paned_window.sashpos(0, 250)
+        print("DEBUG: Components tab initialization finished")
 
-    def load_structures_for_components(self, filter_option="All"):
-        """Load structures into the component tracking tab"""
+    def on_notebook_tab_changed(self, event):
+        """Handle notebook tab changes to refresh data when switching to component tracking"""
+        selected_tab = event.widget.tab('current')['text']
+        print(f"DEBUG: Switched to tab: {selected_tab}")
+        
+        if selected_tab == 'Component Tracking':
+            print("DEBUG: Component Tracking tab selected, refreshing data")
+            # Small delay to ensure UI is ready
+            self.root.after(100, self.load_structures_for_components)
+
+    def load_structures_for_components(self):
+        """Load structures into the component tracking tab with status calculation and auto-base addition"""
+        
         # Clear existing items
         for item in self.component_structure_tree.get_children():
             self.component_structure_tree.delete(item)
@@ -882,26 +945,1325 @@ class StructureManagementApp:
         # Get project ID
         project = self.db.get_project_by_name(self.current_project, self.current_user.id)
         if not project:
+            print("DEBUG: No project found")
             return
+        
+        print(f"DEBUG: Found project {project.name} with ID {project.id}")
         
         # Get structures for this project
         structures = self.db.get_all_structures(project.id)
         
-        # Apply filter if needed
-        if filter_option == "With Components":
-            # TODO: Implement filtering for structures with components
-            pass
-        elif filter_option == "Missing Components":
-            # TODO: Implement filtering for structures missing components
-            pass
+        # Debug: Check if we have structures
+        print(f"DEBUG: Found {len(structures)} structures for project {self.current_project}")
         
-        # Add to treeview
+        if not structures:
+            print("DEBUG: No structures found, returning early")
+            return
+        
+        # Print first few structure details for debugging
+        for i, structure in enumerate(structures[:3]):
+            print(f"DEBUG: Structure {i}: {structure.structure_id} - {structure.structure_type}")
+        
+        # Ensure all structures have base components (safety check)
+        if structures:
+            missing_bases = self.ensure_all_structures_have_bases(project.id, structures)
+            if missing_bases > 0:
+                self.logger.info(f"Auto-added {missing_bases} missing base components during component view load")
+        
+        # Add structures with status calculation
         for structure in structures:
-            self.component_structure_tree.insert(
-                "", 
-                "end", 
-                values=(structure.structure_id, structure.structure_type)
+            try:
+                status_info = self.calculate_structure_component_status(structure.structure_id, project.id)
+                
+                # Determine status tag
+                if status_info['total'] == 0:
+                    tag = "not_started"
+                    status_text = "Not Started"
+                elif status_info['installed'] == status_info['total']:
+                    tag = "complete"
+                    status_text = "Complete"
+                elif status_info['delivered'] + status_info['installed'] > 0:
+                    tag = "in_progress"
+                    status_text = "In Progress"
+                else:
+                    tag = "incomplete"
+                    status_text = "Incomplete"
+                
+                progress_text = f"{status_info['delivered'] + status_info['installed']}/{status_info['total']}"
+                
+                # Debug: Print what we're adding
+                print(f"DEBUG: Adding structure {structure.structure_id} with status {status_text}")
+                
+                # Insert into treeview
+                item = self.component_structure_tree.insert(
+                    "", 
+                    "end", 
+                    values=(structure.structure_id, structure.structure_type, status_text, progress_text),
+                    tags=(tag,)
+                )
+                print(f"DEBUG: Successfully inserted item: {item}")
+                
+            except Exception as e:
+                print(f"DEBUG: Error processing structure {structure.structure_id}: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Debug: Check final count
+        children = self.component_structure_tree.get_children()
+        print(f"DEBUG: Component tree now has {len(children)} items")
+        for child in children:
+            values = self.component_structure_tree.item(child, "values")
+            print(f"DEBUG: Tree item: {values}")
+
+    def calculate_structure_component_status(self, structure_id: str, project_id: int) -> dict:
+        """Calculate component status for a structure"""
+        try:
+            components = self.db.get_structure_components(structure_id, project_id)
+            
+            status_counts = {
+                'total': len(components),
+                'pending': 0,
+                'ordered': 0,
+                'approved': 0,
+                'delivered': 0,
+                'installed': 0
+            }
+            
+            for component in components:
+                status = component.status.lower() if component.status else 'pending'
+                if status in status_counts:
+                    status_counts[status] += 1
+                else:
+                    # If status is unknown, count as pending
+                    status_counts['pending'] += 1
+            
+            print(f"DEBUG: Status for {structure_id}: {status_counts}")
+            return status_counts
+            
+        except Exception as e:
+            print(f"DEBUG: Error calculating status for {structure_id}: {e}")
+            return {
+                'total': 0,
+                'pending': 0,
+                'ordered': 0,
+                'approved': 0,
+                'delivered': 0,
+                'installed': 0
+            }
+
+    def on_structure_selected(self, event):
+        """Handle structure selection in component tracking"""
+        selection = self.component_structure_tree.selection()
+        if not selection:
+            self.selected_structure_label.config(text="None")
+            self.clear_component_view()
+            return
+        
+        structure_id = self.component_structure_tree.item(selection[0], "values")[0]
+        structure_type = self.component_structure_tree.item(selection[0], "values")[1]
+        
+        print(f"DEBUG: Structure selected: {structure_id} ({structure_type})")
+        
+        # Update selected structure label
+        self.selected_structure_label.config(text=f"{structure_id} ({structure_type})")
+        
+        # Load components for this structure
+        self.load_structure_components_enhanced(structure_id)
+
+    def load_structure_components_enhanced(self, structure_id: str):
+        """Load components for the selected structure with enhanced display and proper date format"""
+        print(f"DEBUG: Loading components for structure {structure_id}")
+        
+        # Clear existing components
+        for item in self.component_tree.get_children():
+            self.component_tree.delete(item)
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            print("DEBUG: No project found")
+            return
+        
+        # Get components for this structure - USE ENHANCED METHOD
+        components = self.db.get_structure_components_with_dates(structure_id, project.id)
+        print(f"DEBUG: Found {len(components)} components for structure {structure_id}")
+        
+        if not components:
+            print("DEBUG: No components found, adding a message row")
+            # Add a message indicating no components
+            self.component_tree.insert(
+                "",
+                "end",
+                values=("No components found", "—", "—", "—", "—", "Click 'Add Component' to add components"),
+                tags=("no_components",)
             )
+            return
+        
+        # Add components to treeview with enhanced formatting
+        for i, component in enumerate(components):
+            print(f"DEBUG: Processing component {i}: {component.component_type_name} - {component.status}")
+            
+            # Format dates for display - FIXED FORMAT
+            order_date = component.order_date.strftime("%m/%d/%Y") if component.order_date else "—"
+            expected_date = component.expected_delivery_date.strftime("%m/%d/%Y") if component.expected_delivery_date else "—"
+            delivery_date = component.actual_delivery_date.strftime("%m/%d/%Y") if component.actual_delivery_date else "—"
+            
+            # Get status tag for color coding
+            status_tag = component.status.lower() if component.status else "pending"
+            
+            item_id = self.component_tree.insert(
+                "",
+                "end",
+                values=(
+                    component.component_type_name,
+                    component.status.title(),
+                    order_date,
+                    expected_date,
+                    delivery_date,
+                    component.notes or ""
+                ),
+                tags=(str(component.id), status_tag)  # Store ID and status as tags
+            )
+            print(f"DEBUG: Inserted component item: {item_id}")
+
+    def clear_component_view(self):
+        """Clear the component view when no structure is selected"""
+        for item in self.component_tree.get_children():
+            self.component_tree.delete(item)
+
+    def auto_add_base_components(self):
+        """Manually add base components to structures missing them (backup function)"""
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Get all structures
+        structures = self.db.get_all_structures(project.id)
+        
+        added_count = self.ensure_all_structures_have_bases(project.id, structures)
+        
+        if added_count > 0:
+            Messagebox.show_info(f"Added base components to {added_count} structures", "Success")
+            self.refresh_component_status()
+        else:
+            Messagebox.show_info("All structures already have base components", "No Changes")    
+
+    def ensure_all_structures_have_bases(self, project_id: int, structures: list = None) -> int:
+        """Ensure all structures have base components - called automatically when needed"""
+        if structures is None:
+            structures = self.db.get_all_structures(project_id)
+        
+        # Get base component type
+        component_types = self.db.get_all_component_types()
+        base_type = None
+        for ct in component_types:
+            if ct.name.lower() == "base":
+                base_type = ct
+                break
+        
+        if not base_type:
+            self.logger.warning("Base component type not found - cannot auto-add base components")
+            return 0
+        
+        added_count = 0
+        
+        for structure in structures:
+            # Check if structure already has a base component
+            existing_components = self.db.get_structure_components(structure.structure_id, project_id)
+            has_base = any(comp.component_type_name.lower() == "base" for comp in existing_components)
+            
+            if not has_base:
+                # Add base component automatically
+                component = StructureComponent(
+                    structure_id=structure.structure_id,
+                    component_type_id=base_type.id,
+                    status="pending",
+                    project_id=project_id
+                )
+                
+                if self.db.add_structure_component(component, project_id):
+                    added_count += 1
+                    self.logger.info(f"Auto-added base component to structure {structure.structure_id}")
+        
+        return added_count
+
+    def auto_add_base_to_new_structure(self, structure_id: str, project_id: int):
+        """Automatically add base component when a new structure is created"""
+        # Get base component type
+        component_types = self.db.get_all_component_types()
+        base_type = None
+        for ct in component_types:
+            if ct.name.lower() == "base":
+                base_type = ct
+                break
+        
+        if not base_type:
+            self.logger.warning(f"Base component type not found - cannot auto-add base to structure {structure_id}")
+            return False
+        
+        # Add base component
+        component = StructureComponent(
+            structure_id=structure_id,
+            component_type_id=base_type.id,
+            status="pending",
+            project_id=project_id
+        )
+        
+        success = self.db.add_structure_component(component, project_id)
+        if success:
+            self.logger.info(f"Auto-added base component to new structure {structure_id}")
+        else:
+            self.logger.error(f"Failed to auto-add base component to structure {structure_id}")
+        
+        return success
+
+    def quick_add_riser(self):
+        """Quickly add a riser component to the selected structure without dialog"""
+        selection = self.component_structure_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a structure first", "No Structure Selected")
+            return
+        
+        structure_id = self.component_structure_tree.item(selection[0], "values")[0]
+        structure_type = self.component_structure_tree.item(selection[0], "values")[1]
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Check if structure already has a riser
+        existing_components = self.db.get_structure_components(structure_id, project.id)
+        has_riser = any(comp.component_type_name.lower() == "riser" for comp in existing_components)
+        
+        if has_riser:
+            Messagebox.show_info("This structure already has a riser component", "Already Exists")
+            return
+        
+        # Get riser component type
+        component_types = self.db.get_all_component_types()
+        riser_type = None
+        for ct in component_types:
+            if ct.name.lower() == "riser":
+                riser_type = ct
+                break
+        
+        if not riser_type:
+            Messagebox.show_error("Riser component type not found", "Missing Component Type")
+            return
+        
+        # Add riser component with pending status
+        component = StructureComponent(
+            structure_id=structure_id,
+            component_type_id=riser_type.id,
+            status="pending",
+            project_id=project.id
+        )
+        
+        if self.db.add_structure_component(component, project.id):
+            # Silently refresh views without success dialog
+            self.load_structure_components_enhanced(structure_id)
+            self.refresh_component_status()
+        else:
+            Messagebox.show_error("Failed to add riser component", "Error")
+
+    def quick_add_lid(self):
+        """Quickly add a lid component to the selected structure without dialog"""
+        selection = self.component_structure_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a structure first", "No Structure Selected")
+            return
+        
+        structure_id = self.component_structure_tree.item(selection[0], "values")[0]
+        structure_type = self.component_structure_tree.item(selection[0], "values")[1]
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Check if structure already has a lid
+        existing_components = self.db.get_structure_components(structure_id, project.id)
+        has_lid = any(comp.component_type_name.lower() == "lid" for comp in existing_components)
+        
+        if has_lid:
+            Messagebox.show_info("This structure already has a lid component", "Already Exists")
+            return
+        
+        # Get lid component type
+        component_types = self.db.get_all_component_types()
+        lid_type = None
+        for ct in component_types:
+            if ct.name.lower() == "lid":
+                lid_type = ct
+                break
+        
+        if not lid_type:
+            Messagebox.show_error("Lid component type not found", "Missing Component Type")
+            return
+        
+        # Add lid component with pending status
+        component = StructureComponent(
+            structure_id=structure_id,
+            component_type_id=lid_type.id,
+            status="pending",
+            project_id=project.id
+        )
+        
+        if self.db.add_structure_component(component, project.id):
+            # Silently refresh views without success dialog
+            self.load_structure_components_enhanced(structure_id)
+            self.refresh_component_status()
+        else:
+            Messagebox.show_error("Failed to add lid component", "Error")
+
+    def show_component_context_menu(self, event):
+        """Show right-click context menu for component management"""
+        # Get the item under the cursor
+        item = self.component_tree.identify_row(event.y)
+        if not item:
+            return
+        
+        # Select the item
+        self.component_tree.selection_set(item)
+        
+        # Get component details
+        values = self.component_tree.item(item, "values")
+        if not values or values[0] == "No components found":
+            return
+        
+        component_type = values[0]
+        current_status = values[1].lower()
+        
+        # Create context menu
+        context_menu = tk.Menu(self.root, tearoff=0)
+        
+        # Update Status submenu
+        status_menu = tk.Menu(context_menu, tearoff=0)
+        context_menu.add_cascade(label="Update Status", menu=status_menu)
+        
+        statuses = ["pending", "ordered", "approved", "delivered", "installed"]
+        for status in statuses:
+            if status != current_status:
+                status_menu.add_command(
+                    label=status.title(),
+                    command=lambda s=status: self.quick_update_component_status(s)
+                )
+        
+        context_menu.add_separator()
+        context_menu.add_command(label="Edit Details", command=self.update_component_status)
+        context_menu.add_separator()
+        context_menu.add_command(label="Delete Component", command=self.delete_component_from_context)
+        
+        # Show the menu
+        try:
+            context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            context_menu.grab_release()
+
+    def quick_update_component_status(self, new_status):
+        """Quickly update component status from context menu"""
+        selection = self.component_tree.selection()
+        if not selection:
+            return
+        
+        # Get component ID from tags
+        component_id = int([tag for tag in self.component_tree.item(selection[0], "tags") if tag.isdigit()][0])
+        
+        # Set delivery date if changing to delivered/installed
+        delivery_date = None
+        if new_status in ["delivered", "installed"]:
+            delivery_date = datetime.now()
+        
+        success = self.db.update_component_status(component_id, new_status, None, delivery_date)
+        
+        if success:
+            # Refresh current view
+            if self.component_structure_tree.selection():
+                structure_id = self.component_structure_tree.item(
+                    self.component_structure_tree.selection()[0], "values")[0]
+                self.load_structure_components_enhanced(structure_id)
+                self.refresh_component_status()
+        else:
+            Messagebox.show_error("Failed to update component status", "Error")
+
+    def delete_component_from_context(self):
+        """Delete component from right-click context menu"""
+        selection = self.component_tree.selection()
+        if not selection:
+            return
+        
+        # Get component ID from tags
+        component_id = int([tag for tag in self.component_tree.item(selection[0], "tags") if tag.isdigit()][0])
+        
+        success = self.db.delete_structure_component(component_id)
+        
+        if success:
+            # Refresh current view
+            if self.component_structure_tree.selection():
+                structure_id = self.component_structure_tree.item(
+                    self.component_structure_tree.selection()[0], "values")[0]
+                self.load_structure_components_enhanced(structure_id)
+                self.refresh_component_status()
+        else:
+            Messagebox.show_error("Failed to delete component", "Error")
+
+    def open_date_picker(self, entry_widget):
+        """Open a properly formatted custom calendar date picker"""
+        from datetime import datetime, timedelta
+        import calendar
+        from ttkbootstrap.dialogs import Messagebox
+        
+        try:
+            # Create date picker window
+            date_window = ttk.Toplevel(self.root)
+            date_window.title("Select Date")
+            date_window.geometry("350x370")
+            date_window.transient(self.root)
+            date_window.grab_set()
+            date_window.resizable(False, False)
+            date_window.minsize(350, 370)
+            
+            # Center the window
+            date_window.geometry("+%d+%d" % (self.root.winfo_rootx() + 50, self.root.winfo_rooty() + 50))
+            
+            # Main frame
+            main_frame = ttk.Frame(date_window, padding=10)
+            main_frame.pack(fill="both", expand=True)
+            
+            # Current date for default
+            today = datetime.now()
+            current_year = today.year
+            current_month = today.month
+            current_day = today.day
+            
+            # Variables to track selected date
+            selected_date = [current_year, current_month, current_day]
+            
+            # Title
+            ttk.Label(main_frame, text="Select Date", 
+                    font=("Helvetica", 12, "bold"), 
+                    bootstyle="primary").pack(pady=(0, 10))
+            
+            # Month/Year navigation frame
+            nav_frame = ttk.Frame(main_frame)
+            nav_frame.pack(fill="x", pady=(0, 10))
+            
+            # Month/Year display and controls
+            month_year_var = tk.StringVar()
+            
+            def update_month_year_display():
+                month_name = calendar.month_name[selected_date[1]]
+                month_year_var.set(f"{month_name} {selected_date[0]}")
+            
+            def prev_month():
+                if selected_date[1] == 1:
+                    selected_date[1] = 12
+                    selected_date[0] -= 1
+                else:
+                    selected_date[1] -= 1
+                update_calendar()
+            
+            def next_month():
+                if selected_date[1] == 12:
+                    selected_date[1] = 1
+                    selected_date[0] += 1
+                else:
+                    selected_date[1] += 1
+                update_calendar()
+            
+            # Navigation layout: < Month Year >
+            ttk.Button(nav_frame, text="◀", command=prev_month, width=3).pack(side="left")
+            
+            month_year_label = ttk.Label(nav_frame, textvariable=month_year_var, 
+                                        font=("Helvetica", 12, "bold"))
+            month_year_label.pack(side="left", expand=True)
+            
+            ttk.Button(nav_frame, text="▶", command=next_month, width=3).pack(side="right")
+            
+            # Calendar container frame
+            calendar_container = ttk.Frame(main_frame)
+            calendar_container.pack(pady=(0, 10))
+            
+            # Complete calendar grid (headers + dates in one frame)
+            cal_grid = ttk.Frame(calendar_container)
+            cal_grid.pack()
+            
+            # Day of week headers - row 0
+            days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+            for i, day in enumerate(days):
+                header_label = ttk.Label(cal_grid, text=day, font=("Helvetica", 8, "bold"),
+                                    bootstyle="secondary", width=4, anchor="center")
+                header_label.grid(row=0, column=i, padx=1, pady=(0, 3), sticky="ew")
+            
+            # Configure all columns to be equal width
+            for i in range(7):
+                cal_grid.columnconfigure(i, weight=1, minsize=35)
+            
+            # Calendar day buttons
+            day_buttons = {}
+            
+            def select_day(day):
+                selected_date[2] = day
+                update_calendar()
+            
+            def update_calendar():
+                # Clear existing day buttons
+                for button in day_buttons.values():
+                    button.destroy()
+                day_buttons.clear()
+                
+                # Update month/year display
+                update_month_year_display()
+                
+                # Get calendar for current month
+                cal = calendar.monthcalendar(selected_date[0], selected_date[1])
+                
+                # Create day buttons - start from row 1 (row 0 has headers)
+                for week_num, week in enumerate(cal, 1):
+                    for day_num, day in enumerate(week):
+                        if day == 0:
+                            # Empty cell - create invisible spacer
+                            spacer = ttk.Label(cal_grid, text="", width=4)
+                            spacer.grid(row=week_num, column=day_num, padx=1, pady=1)
+                            continue
+                        
+                        # Determine button style
+                        is_today = (day == today.day and 
+                                selected_date[1] == today.month and 
+                                selected_date[0] == today.year)
+                        is_selected = day == selected_date[2]
+                        
+                        if is_selected:
+                            style = "primary"  # Blue for selected date
+                        elif is_today:
+                            style = "secondary"  # Grey for today's date
+                        else:
+                            style = "secondary-outline"
+                        
+                        btn = ttk.Button(cal_grid, text=str(day), 
+                                    command=lambda d=day: select_day(d),
+                                    bootstyle=style, width=4)
+                        btn.grid(row=week_num, column=day_num, padx=1, pady=1, sticky="ew")
+                        day_buttons[day] = btn
+            
+            # Selected date display
+            selected_display = ttk.Label(main_frame, text="", 
+                                    font=("Helvetica", 9, "bold"), 
+                                    bootstyle="success")
+            selected_display.pack(pady=(0, 10))
+            
+            def update_selected_display():
+                date_str = f"{selected_date[1]:02d}/{selected_date[2]:02d}/{selected_date[0]}"
+                selected_display.config(text=f"Selected: {date_str}")
+            
+            # Override update_calendar to also update display
+            original_update_calendar = update_calendar
+            def update_calendar():
+                original_update_calendar()
+                update_selected_display()
+            
+            # Button frame
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill="x")
+            
+            def confirm_selection():
+                date_str = f"{selected_date[1]:02d}/{selected_date[2]:02d}/{selected_date[0]}"
+                entry_widget.delete(0, tk.END)
+                entry_widget.insert(0, date_str)
+                date_window.destroy()
+            
+            def cancel_selection():
+                date_window.destroy()
+            
+            # Action buttons
+            ttk.Button(button_frame, text="OK", bootstyle="primary", 
+                    command=confirm_selection, width=10).pack(side="left", padx=(0, 5))
+            ttk.Button(button_frame, text="Cancel", bootstyle="secondary", 
+                    command=cancel_selection, width=10).pack(side="right")
+            
+            # Initialize calendar
+            update_calendar()
+            
+            # Bind Escape key to cancel
+            date_window.bind('<Escape>', lambda e: cancel_selection())
+            
+            # Bind Enter key to confirm
+            date_window.bind('<Return>', lambda e: confirm_selection())
+            
+        except Exception as e:
+            self.logger.error(f"Error opening custom date picker: {e}", exc_info=True)
+            
+            # Fallback to simple dialog
+            try:
+                from tkinter import simpledialog
+                date_str = simpledialog.askstring(
+                    "Date Input", 
+                    "Enter date (MM/DD/YYYY):",
+                    initialvalue=datetime.now().strftime("%m/%d/%Y")
+                )
+                if date_str:
+                    try:
+                        datetime.strptime(date_str, "%m/%d/%Y")
+                        entry_widget.delete(0, tk.END)
+                        entry_widget.insert(0, date_str)
+                    except ValueError:
+                        Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+            except Exception as fallback_error:
+                self.logger.error(f"Fallback date picker failed: {fallback_error}")
+                Messagebox.show_error("Date picker unavailable. Please enter date manually.", "Error")
+
+    def update_component_status(self):
+        """Enhanced component status update with better UX"""
+        selection = self.component_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a component first", "No Component Selected")
+            return
+        
+        # Get component details
+        component_id = int([tag for tag in self.component_tree.item(selection[0], "tags") if tag.isdigit()][0])
+        values = self.component_tree.item(selection[0], "values")
+        current_type = values[0]
+        current_status = values[1].lower()
+        current_notes = values[5]
+        
+        # Create enhanced update dialog
+        self.show_component_update_dialog(component_id, current_type, current_status, current_notes)
+
+    def show_component_update_dialog(self, component_id: int, component_type: str, current_status: str, current_notes: str):
+        """Show enhanced component update dialog with calendar buttons and correct size"""
+        update_window = ttk.Toplevel(self.root)
+        update_window.title("Update Component Status")
+        update_window.geometry("505x725")
+        update_window.transient(self.root)
+        update_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(update_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Update Component Status", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Component info
+        info_frame = ttk.Labelframe(main_frame, text="Component Information", padding=10)
+        info_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(info_frame, text=f"Type: {component_type}", font=("Helvetica", 12, "bold")).pack(anchor="w")
+        ttk.Label(info_frame, text=f"Current Status: {current_status.title()}", font=("Helvetica", 10)).pack(anchor="w")
+        
+        # Status update section
+        status_frame = ttk.Labelframe(main_frame, text="Update Status", padding=10)
+        status_frame.pack(fill="x", pady=(0, 15))
+        
+        ttk.Label(status_frame, text="New Status:").pack(anchor="w", pady=(0, 5))
+        
+        status_var = tk.StringVar(value=current_status)
+        status_options = ["pending", "ordered", "approved", "delivered", "installed"]
+        status_combo = ttk.Combobox(status_frame, textvariable=status_var, values=status_options, state="readonly")
+        status_combo.pack(fill="x", pady=(0, 10))
+        
+        # Date fields with calendar buttons
+        date_frame = ttk.Frame(status_frame)
+        date_frame.pack(fill="x", pady=(10, 0))
+        
+        # Order date
+        order_frame = ttk.Frame(date_frame)
+        ttk.Label(order_frame, text="Order Date:").pack(anchor="w")
+        order_date_frame = ttk.Frame(order_frame)
+        order_date_frame.pack(fill="x", pady=(2, 10))
+        order_entry = ttk.Entry(order_date_frame)
+        order_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        order_cal_btn = ttk.Button(order_date_frame, text="📅", width=3,
+                                command=lambda: self.open_date_picker(order_entry))
+        order_cal_btn.pack(side="right")
+        
+        # Expected delivery date
+        expected_frame = ttk.Frame(date_frame)
+        ttk.Label(expected_frame, text="Expected Delivery:").pack(anchor="w")
+        expected_date_frame = ttk.Frame(expected_frame)
+        expected_date_frame.pack(fill="x", pady=(2, 10))
+        expected_entry = ttk.Entry(expected_date_frame)
+        expected_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        expected_cal_btn = ttk.Button(expected_date_frame, text="📅", width=3,
+                                    command=lambda: self.open_date_picker(expected_entry))
+        expected_cal_btn.pack(side="right")
+        
+        # Actual delivery date
+        delivery_frame = ttk.Frame(date_frame)
+        ttk.Label(delivery_frame, text="Actual Delivery:").pack(anchor="w")
+        actual_date_frame = ttk.Frame(delivery_frame)
+        actual_date_frame.pack(fill="x", pady=(2, 10))
+        actual_entry = ttk.Entry(actual_date_frame)
+        actual_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        actual_cal_btn = ttk.Button(actual_date_frame, text="📅", width=3,
+                                command=lambda: self.open_date_picker(actual_entry))
+        actual_cal_btn.pack(side="right")
+        
+        # Show/hide date fields based on status
+        def update_date_visibility(*args):
+            # Clear all frames first
+            order_frame.pack_forget()
+            expected_frame.pack_forget()
+            delivery_frame.pack_forget()
+            
+            status = status_var.get()
+            if status in ["ordered", "approved", "delivered", "installed"]:
+                order_frame.pack(fill="x")
+                expected_frame.pack(fill="x")
+            
+            if status in ["delivered", "installed"]:
+                delivery_frame.pack(fill="x")
+        
+        status_var.trace("w", update_date_visibility)
+        update_date_visibility()  # Initial setup
+        
+        # Notes section
+        notes_frame = ttk.Labelframe(main_frame, text="Notes", padding=10)
+        notes_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
+        notes_text = tk.Text(notes_frame, height=6, wrap="word")
+        notes_text.pack(fill="both", expand=True)
+        notes_text.insert("1.0", current_notes)
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        def save_update():
+            try:
+                # Parse dates
+                order_date = None
+                expected_date = None
+                actual_date = None
+                
+                if order_entry.get().strip():
+                    order_date = datetime.strptime(order_entry.get().strip(), "%m/%d/%Y")
+                
+                if expected_entry.get().strip():
+                    expected_date = datetime.strptime(expected_entry.get().strip(), "%m/%d/%Y")
+                
+                if actual_entry.get().strip():
+                    actual_date = datetime.strptime(actual_entry.get().strip(), "%m/%d/%Y")
+                
+                # Update component with enhanced method
+                success = self.db.update_component_status_enhanced(
+                    component_id,
+                    status_var.get(),
+                    notes_text.get("1.0", tk.END).strip(),
+                    order_date,
+                    expected_date,
+                    actual_date
+                )
+                
+                if success:
+                    update_window.destroy()
+                    # Refresh views
+                    self.refresh_component_status()
+                    # Reload components for current structure
+                    if self.component_structure_tree.selection():
+                        structure_id = self.component_structure_tree.item(
+                            self.component_structure_tree.selection()[0], "values")[0]
+                        self.load_structure_components_enhanced(structure_id)
+                else:
+                    Messagebox.show_error("Failed to update component", "Error")
+            
+            except ValueError as e:
+                Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+            except Exception as e:
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+        
+        ttk.Button(button_frame, text="Save", bootstyle="primary", command=save_update).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Cancel", bootstyle="secondary", command=update_window.destroy).pack(side="right", padx=5)
+
+    def refresh_component_status(self):
+        """Refresh the component status overview"""
+        # Store current selection
+        current_selection = None
+        if self.component_structure_tree.selection():
+            current_selection = self.component_structure_tree.item(
+                self.component_structure_tree.selection()[0], "values")[0]
+        
+        # Reload structures
+        self.load_structures_for_components()
+        
+        # Restore selection if possible
+        if current_selection:
+            for item in self.component_structure_tree.get_children():
+                if self.component_structure_tree.item(item, "values")[0] == current_selection:
+                    self.component_structure_tree.selection_set(item)
+                    self.component_structure_tree.see(item)
+                    break
+
+    def filter_structures_by_status(self, event=None):
+        """Filter structures based on their component status"""
+        filter_value = self.component_filter_var.get()
+        
+        # Clear current items
+        for item in self.component_structure_tree.get_children():
+            self.component_structure_tree.delete(item)
+        
+        # Get project and structures
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        structures = self.db.get_all_structures(project.id)
+        
+        # Filter and add structures
+        for structure in structures:
+            status_info = self.calculate_structure_component_status(structure.structure_id, project.id)
+            
+            # Determine if structure matches filter
+            show_structure = False
+            
+            if filter_value == "All Structures":
+                show_structure = True
+            elif filter_value == "Complete" and status_info['total'] > 0:
+                show_structure = (status_info['installed'] == status_info['total'])
+            elif filter_value == "Not Started":
+                show_structure = (status_info['total'] == 0)
+            elif filter_value == "In Progress" and status_info['total'] > 0:
+                show_structure = (0 < status_info['delivered'] + status_info['installed'] < status_info['total'])
+            elif filter_value == "Incomplete" and status_info['total'] > 0:
+                show_structure = (status_info['delivered'] + status_info['installed'] < status_info['total'])
+            
+            if show_structure:
+                # Determine status and tag
+                if status_info['total'] == 0:
+                    tag = "not_started"
+                    status_text = "Not Started"
+                elif status_info['installed'] == status_info['total']:
+                    tag = "complete"
+                    status_text = "Complete"
+                elif status_info['delivered'] + status_info['installed'] > 0:
+                    tag = "in_progress"
+                    status_text = "In Progress"
+                else:
+                    tag = "incomplete"
+                    status_text = "Incomplete"
+                
+                progress_text = f"{status_info['delivered'] + status_info['installed']}/{status_info['total']}"
+                
+                self.component_structure_tree.insert(
+                    "", 
+                    "end", 
+                    values=(structure.structure_id, structure.structure_type, status_text, progress_text),
+                    tags=(tag,)
+                )
+
+    def add_component_enhanced(self):
+        """Enhanced add component dialog - UPDATED WITHOUT SUCCESS DIALOG"""
+        # Get selected structure
+        selection = self.component_structure_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a structure first", "No Structure Selected")
+            return
+        
+        structure_id = self.component_structure_tree.item(selection[0], "values")[0]
+        structure_type = self.component_structure_tree.item(selection[0], "values")[1]
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Create enhanced dialog with specified size
+        component_window = ttk.Toplevel(self.root)
+        component_window.title("Add Component")
+        component_window.geometry("470x760")
+        component_window.transient(self.root)
+        component_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(component_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Add Component", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Structure info
+        info_frame = ttk.Labelframe(main_frame, text="Structure Information", padding=10)
+        info_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            info_frame,
+            text=f"Structure: {structure_id}",
+            font=("Helvetica", 12, "bold")
+        ).pack(anchor="w")
+        ttk.Label(
+            info_frame,
+            text=f"Type: {structure_type}",
+            font=("Helvetica", 10)
+        ).pack(anchor="w")
+        
+        # Component selection
+        component_frame = ttk.Labelframe(main_frame, text="Component Details", padding=10)
+        component_frame.pack(fill="x", pady=(0, 20))
+        
+        # Component type with smart suggestions
+        ttk.Label(component_frame, text="Component Type:").pack(anchor="w", pady=(0, 5))
+        
+        component_types = self.db.get_all_component_types()
+        type_names = [ct.name for ct in component_types]
+        
+        type_var = tk.StringVar()
+        type_combo = ttk.Combobox(component_frame, textvariable=type_var, values=type_names, state="readonly")
+        type_combo.pack(fill="x", pady=(0, 10))
+        
+        # Smart suggestions based on existing components
+        existing_components = self.db.get_structure_components(structure_id, project.id)
+        existing_types = [comp.component_type_name.lower() for comp in existing_components]
+        
+        # Suggest missing components
+        suggestions = []
+        if structure_type in ["CB", "JB"] and "riser" not in existing_types:
+            suggestions.append("Riser (Recommended for CB/JB)")
+        if "lid" not in existing_types and ("riser" in existing_types or structure_type in ["CB", "JB"]):
+            suggestions.append("Lid (Recommended with Riser)")
+        if "frame" not in existing_types:
+            suggestions.append("Frame (Optional)")
+        
+        if suggestions:
+            suggest_frame = ttk.Frame(component_frame)
+            suggest_frame.pack(fill="x", pady=(0, 10))
+            
+            ttk.Label(suggest_frame, text="Suggestions:", font=("Helvetica", 9, "bold")).pack(anchor="w")
+            for suggestion in suggestions[:3]:
+                ttk.Label(suggest_frame, text=f"• {suggestion}", font=("Helvetica", 9)).pack(anchor="w", padx=10)
+        
+        if type_names:
+            # Auto-select based on suggestions
+            if structure_type in ["CB", "JB"] and "riser" not in existing_types and "Riser" in type_names:
+                type_combo.set("Riser")
+            elif "riser" in existing_types and "lid" not in existing_types and "Lid" in type_names:
+                type_combo.set("Lid")
+            else:
+                type_combo.current(0)
+        
+        # Initial status
+        ttk.Label(component_frame, text="Initial Status:").pack(anchor="w", pady=(10, 5))
+        
+        status_var = tk.StringVar(value="pending")
+        status_options = ["pending", "ordered", "approved", "delivered", "installed"]
+        status_combo = ttk.Combobox(component_frame, textvariable=status_var, values=status_options, state="readonly")
+        status_combo.pack(fill="x", pady=(0, 10))
+        
+        # Date fields with calendar buttons
+        date_frame = ttk.Frame(component_frame)
+        date_frame.pack(fill="x", pady=(10, 0))
+        
+        # Order date
+        order_frame = ttk.Frame(date_frame)
+        ttk.Label(order_frame, text="Order Date:").pack(anchor="w")
+        order_date_frame = ttk.Frame(order_frame)
+        order_date_frame.pack(fill="x", pady=(2, 10))
+        order_entry = ttk.Entry(order_date_frame)
+        order_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        order_cal_btn = ttk.Button(order_date_frame, text="📅", width=3,
+                                command=lambda: self.open_date_picker(order_entry))
+        order_cal_btn.pack(side="right")
+        
+        # Expected delivery
+        expected_frame = ttk.Frame(date_frame)
+        ttk.Label(expected_frame, text="Expected Delivery:").pack(anchor="w")
+        expected_date_frame = ttk.Frame(expected_frame)
+        expected_date_frame.pack(fill="x", pady=(2, 10))
+        expected_entry = ttk.Entry(expected_date_frame)
+        expected_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        expected_cal_btn = ttk.Button(expected_date_frame, text="📅", width=3,
+                                    command=lambda: self.open_date_picker(expected_entry))
+        expected_cal_btn.pack(side="right")
+        
+        # Actual delivery
+        actual_frame = ttk.Frame(date_frame)
+        ttk.Label(actual_frame, text="Actual Delivery:").pack(anchor="w")
+        actual_date_frame = ttk.Frame(actual_frame)
+        actual_date_frame.pack(fill="x", pady=(2, 10))
+        actual_entry = ttk.Entry(actual_date_frame)
+        actual_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        actual_cal_btn = ttk.Button(actual_date_frame, text="📅", width=3,
+                                command=lambda: self.open_date_picker(actual_entry))
+        actual_cal_btn.pack(side="right")
+        
+        # Show/hide date fields based on status
+        def update_date_fields(*args):
+            order_frame.pack_forget()
+            expected_frame.pack_forget()
+            actual_frame.pack_forget()
+            
+            status = status_var.get()
+            if status in ["ordered", "approved", "delivered", "installed"]:
+                order_frame.pack(fill="x")
+                expected_frame.pack(fill="x")
+                if not order_entry.get():
+                    order_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
+            
+            if status in ["delivered", "installed"]:
+                actual_frame.pack(fill="x")
+                if not actual_entry.get():
+                    actual_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
+        
+        status_var.trace("w", update_date_fields)
+        update_date_fields()
+        
+        # Notes
+        notes_frame = ttk.Labelframe(main_frame, text="Notes (Optional)", padding=10)
+        notes_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        notes_text = tk.Text(notes_frame, height=4, wrap="word")
+        notes_text.pack(fill="both", expand=True)
+        
+        # Quick actions
+        quick_frame = ttk.Frame(main_frame)
+        quick_frame.pack(fill="x", pady=(0, 20))
+        
+        def quick_riser():
+            if "Riser" in type_names:
+                type_var.set("Riser")
+                status_var.set("pending")
+        
+        def quick_lid():
+            if "Lid" in type_names:
+                type_var.set("Lid")
+                status_var.set("pending")
+        
+        def quick_complete_component():
+            current_type = type_var.get()
+            if current_type:
+                status_var.set("installed")
+                actual_entry.delete(0, tk.END)
+                actual_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
+                notes_text.insert("1.0", f"{current_type} installed during construction")
+        
+        ttk.Button(quick_frame, text="Quick: Riser", bootstyle="info-outline", command=quick_riser).pack(side="left", padx=5)
+        ttk.Button(quick_frame, text="Quick: Lid", bootstyle="info-outline", command=quick_lid).pack(side="left", padx=5)
+        ttk.Button(quick_frame, text="Mark as Installed", bootstyle="success-outline", command=quick_complete_component).pack(side="right", padx=5)
+        
+        def save_component():
+            try:
+                # Validate component type
+                if not type_var.get():
+                    Messagebox.show_error("Please select a component type", "Validation Error")
+                    return
+                
+                # Get component type ID
+                component_type_id = None
+                for ct in component_types:
+                    if ct.name == type_var.get():
+                        component_type_id = ct.id
+                        break
+                
+                if not component_type_id:
+                    Messagebox.show_error("Invalid component type", "Validation Error")
+                    return
+                
+                # Parse dates - Fixed to be more robust
+                order_date = None
+                expected_date = None
+                actual_date = None
+                
+                try:
+                    if order_entry.get().strip():
+                        order_date = datetime.strptime(order_entry.get().strip(), "%m/%d/%Y")
+                    
+                    if expected_entry.get().strip():
+                        expected_date = datetime.strptime(expected_entry.get().strip(), "%m/%d/%Y")
+                    
+                    if actual_entry.get().strip():
+                        actual_date = datetime.strptime(actual_entry.get().strip(), "%m/%d/%Y")
+                
+                except ValueError:
+                    Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+                    return
+                
+                # Create component
+                component = StructureComponent(
+                    structure_id=structure_id,
+                    component_type_id=component_type_id,
+                    status=status_var.get(),
+                    order_date=order_date,
+                    expected_delivery_date=expected_date,
+                    actual_delivery_date=actual_date,
+                    notes=notes_text.get("1.0", tk.END).strip() or None,
+                    project_id=project.id
+                )
+                
+                # Add to database
+                success = self.db.add_structure_component(component, project.id)
+                
+                if success:
+                    # Clear form and refresh without success dialog
+                    type_var.set("")
+                    status_var.set("pending")
+                    order_entry.delete(0, tk.END)
+                    expected_entry.delete(0, tk.END)
+                    actual_entry.delete(0, tk.END)
+                    notes_text.delete("1.0", tk.END)
+                    
+                    # Refresh views
+                    self.load_structure_components_enhanced(structure_id)
+                    self.refresh_component_status()
+                    
+                    # Focus back to component type for quick next entry
+                    type_combo.focus()
+                else:
+                    Messagebox.show_error("Failed to add component", "Database Error")
+            
+            except Exception as e:
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(button_frame, text="Add Component", bootstyle="primary", command=save_component).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Close", bootstyle="secondary", command=component_window.destroy).pack(side="right", padx=5)
+
+    def bulk_update_components(self):
+        """Bulk update multiple components"""
+        # Get selected structure
+        selection = self.component_structure_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a structure first", "No Structure Selected")
+            return
+        
+        structure_id = self.component_structure_tree.item(selection[0], "values")[0]
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Get all components for this structure
+        components = self.db.get_structure_components(structure_id, project.id)
+        
+        if not components:
+            Messagebox.show_info("No components found for this structure", "No Components")
+            return
+        
+        # Create bulk update dialog
+        bulk_window = ttk.Toplevel(self.root)
+        bulk_window.title("Bulk Update Components")
+        bulk_window.geometry("600x500")
+        bulk_window.transient(self.root)
+        bulk_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(bulk_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text=f"Bulk Update: {structure_id}", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Component selection
+        selection_frame = ttk.Labelframe(main_frame, text="Select Components to Update", padding=10)
+        selection_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        # Checkboxes for each component
+        component_vars = {}
+        for component in components:
+            var = tk.BooleanVar(value=True)
+            component_vars[component.id] = var
+            
+            check_frame = ttk.Frame(selection_frame)
+            check_frame.pack(fill="x", pady=2)
+            
+            ttk.Checkbutton(
+                check_frame,
+                text=f"{component.component_type_name} - Current: {component.status.title()}",
+                variable=var
+            ).pack(side="left")
+        
+        # Update options
+        update_frame = ttk.Labelframe(main_frame, text="Update Options", padding=10)
+        update_frame.pack(fill="x", pady=(0, 20))
+        
+        # New status
+        ttk.Label(update_frame, text="New Status:").pack(anchor="w", pady=(0, 5))
+        new_status_var = tk.StringVar()
+        status_combo = ttk.Combobox(
+            update_frame, 
+            textvariable=new_status_var, 
+            values=["pending", "ordered", "approved", "delivered", "installed"],
+            state="readonly"
+        )
+        status_combo.pack(fill="x", pady=(0, 10))
+        
+        # Date for delivery
+        ttk.Label(update_frame, text="Delivery Date (MM/DD/YYYY, if applicable):").pack(anchor="w", pady=(0, 5))
+        date_entry = ttk.Entry(update_frame)
+        date_entry.pack(fill="x", pady=(0, 10))
+        
+        # Additional notes
+        ttk.Label(update_frame, text="Additional Notes:").pack(anchor="w", pady=(0, 5))
+        notes_entry = ttk.Entry(update_frame)
+        notes_entry.pack(fill="x")
+        
+        def perform_bulk_update():
+            if not new_status_var.get():
+                Messagebox.show_error("Please select a new status", "Missing Status")
+                return
+            
+            # Get selected components
+            selected_components = [comp_id for comp_id, var in component_vars.items() if var.get()]
+            
+            if not selected_components:
+                Messagebox.show_error("Please select at least one component", "No Selection")
+                return
+            
+            # Parse date if provided
+            delivery_date = None
+            if date_entry.get().strip():
+                try:
+                    delivery_date = datetime.strptime(date_entry.get().strip(), "%m/%d/%Y")
+                except ValueError:
+                    Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+                    return
+            
+            # Update components
+            updated_count = 0
+            for comp_id in selected_components:
+                success = self.db.update_component_status(
+                    comp_id,
+                    new_status_var.get(),
+                    notes_entry.get().strip() or None,
+                    delivery_date
+                )
+                if success:
+                    updated_count += 1
+            
+            if updated_count > 0:
+                Messagebox.show_info(f"Updated {updated_count} components", "Success")
+                bulk_window.destroy()
+                # Refresh views
+                self.load_structure_components_enhanced(structure_id)
+                self.refresh_component_status()
+            else:
+                Messagebox.show_error("Failed to update components", "Error")
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(button_frame, text="Update Selected", bootstyle="primary", command=perform_bulk_update).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Cancel", bootstyle="secondary", command=bulk_window.destroy).pack(side="right", padx=5)
 
     def load_structure_components(self, event):
         """Load components for the selected structure"""
@@ -944,6 +2306,247 @@ class StructureManagementApp:
                 ),
                 tags=(str(component.id),)  # Store the component ID as a tag
             )
+
+    def generate_delivery_report(self):
+        """Generate a comprehensive delivery report"""
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Get all structures and their components
+        structures = self.db.get_all_structures(project.id)
+        
+        # Create report window
+        report_window = ttk.Toplevel(self.root)
+        report_window.title(f"Delivery Report: {self.current_project}")
+        report_window.geometry("900x700")
+        
+        # Main container
+        main_frame = ttk.Frame(report_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Report header
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            header_frame, 
+            text=f"Component Delivery Report: {self.current_project}",
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(side="left")
+        
+        ttk.Label(
+            header_frame, 
+            text=f"Generated: {datetime.now().strftime('%m/%d/%Y %H:%M')}",
+            bootstyle="secondary"
+        ).pack(side="right")
+        
+        # Summary section
+        summary_frame = ttk.Labelframe(main_frame, text="Project Summary", padding=10)
+        summary_frame.pack(fill="x", pady=(0, 20))
+        
+        # Calculate overall statistics
+        total_structures = len(structures)
+        total_components = 0
+        status_counts = {"pending": 0, "ordered": 0, "approved": 0, "delivered": 0, "installed": 0}
+        
+        for structure in structures:
+            components = self.db.get_structure_components(structure.structure_id, project.id)
+            total_components += len(components)
+            for component in components:
+                if component.status in status_counts:
+                    status_counts[component.status] += 1
+        
+        # Display summary
+        summary_text = f"Total Structures: {total_structures}  |  Total Components: {total_components}  |  "
+        summary_text += f"Pending: {status_counts['pending']}  |  Ordered: {status_counts['ordered']}  |  "
+        summary_text += f"Approved: {status_counts['approved']}  |  Delivered: {status_counts['delivered']}  |  "
+        summary_text += f"Installed: {status_counts['installed']}"
+        
+        ttk.Label(summary_frame, text=summary_text, font=("Helvetica", 10)).pack()
+        
+        # Detailed report
+        detail_frame = ttk.Labelframe(main_frame, text="Detailed Component Status", padding=10)
+        detail_frame.pack(fill="both", expand=True)
+        
+        # Create treeview for detailed report
+        columns = ("STRUCTURE", "TYPE", "COMPONENT", "STATUS", "ORDERED", "EXPECTED", "DELIVERED")
+        report_tree = ttk.Treeview(detail_frame, columns=columns, show="headings", height=15)
+        
+        # Configure columns
+        report_tree.heading("STRUCTURE", text="Structure")
+        report_tree.heading("TYPE", text="Type")
+        report_tree.heading("COMPONENT", text="Component")
+        report_tree.heading("STATUS", text="Status")
+        report_tree.heading("ORDERED", text="Order Date")
+        report_tree.heading("EXPECTED", text="Expected")
+        report_tree.heading("DELIVERED", text="Delivered")
+        
+        report_tree.column("STRUCTURE", width=100)
+        report_tree.column("TYPE", width=80)
+        report_tree.column("COMPONENT", width=100)
+        report_tree.column("STATUS", width=80)
+        report_tree.column("ORDERED", width=100)
+        report_tree.column("EXPECTED", width=100)
+        report_tree.column("DELIVERED", width=100)
+        
+        # Configure status tags
+        report_tree.tag_configure("pending", background="#fff3cd")
+        report_tree.tag_configure("ordered", background="#cce7ff")
+        report_tree.tag_configure("approved", background="#e2e3e5")
+        report_tree.tag_configure("delivered", background="#d1ecf1")
+        report_tree.tag_configure("installed", background="#d4edda")
+        
+        # Add scrollbar
+        report_scrollbar = ttk.Scrollbar(detail_frame, orient="vertical", command=report_tree.yview)
+        report_tree.configure(yscrollcommand=report_scrollbar.set)
+        
+        # Populate report
+        for structure in structures:
+            components = self.db.get_structure_components(structure.structure_id, project.id)
+            
+            if not components:
+                # Show structures with no components
+                report_tree.insert(
+                    "", "end",
+                    values=(structure.structure_id, structure.structure_type, "No Components", "—", "—", "—", "—"),
+                    tags=("pending",)
+                )
+            else:
+                for component in components:
+                    order_date = component.order_date.strftime("%m/%d/%Y") if component.order_date else "—"
+                    expected_date = component.expected_delivery_date.strftime("%m/%d/%Y") if component.expected_delivery_date else "—"
+                    delivery_date = component.actual_delivery_date.strftime("%m/%d/%Y") if component.actual_delivery_date else "—"
+                    
+                    report_tree.insert(
+                        "", "end",
+                        values=(
+                            structure.structure_id,
+                            structure.structure_type,
+                            component.component_type_name,
+                            component.status.title(),
+                            order_date,
+                            expected_date,
+                            delivery_date
+                        ),
+                        tags=(component.status,)
+                    )
+        
+        # Pack report tree and scrollbar
+        report_tree.pack(side="left", fill="both", expand=True)
+        report_scrollbar.pack(side="right", fill="y")
+        
+        # Export buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        ttk.Button(
+            button_frame, 
+            text="Export to CSV", 
+            bootstyle="success",
+            command=lambda: Messagebox.show_info("CSV export coming soon", "Feature Coming Soon")
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame, 
+            text="Print Report", 
+            bootstyle="info",
+            command=lambda: Messagebox.show_info("Print functionality coming soon", "Feature Coming Soon")
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame, 
+            text="Close", 
+            bootstyle="secondary",
+            command=report_window.destroy
+        ).pack(side="right", padx=5)
+
+    def on_component_double_click(self, event):
+        """Handle double-click on component for quick status update"""
+        selection = self.component_tree.selection()
+        if not selection:
+            return
+        
+        # Quick status progression
+        values = self.component_tree.item(selection[0], "values")
+        current_status = values[1].lower()
+        
+        # Define status progression
+        status_progression = {
+            "pending": "ordered",
+            "ordered": "approved", 
+            "approved": "delivered",
+            "delivered": "installed"
+        }
+        
+        if current_status in status_progression:
+            next_status = status_progression[current_status]
+            
+            # Quick confirmation
+            confirm = Messagebox.yesno(
+                f"Change status from '{current_status.title()}' to '{next_status.title()}'?",
+                "Quick Status Update"
+            )
+            
+            if confirm:
+                component_id = int([tag for tag in self.component_tree.item(selection[0], "tags") if tag.isdigit()][0])
+                
+                # Set delivery date if changing to delivered/installed
+                delivery_date = None
+                if next_status in ["delivered", "installed"]:
+                    delivery_date = datetime.now()
+                
+                success = self.db.update_component_status(component_id, next_status, None, delivery_date)
+                
+                if success:
+                    # Refresh current view
+                    if self.component_structure_tree.selection():
+                        structure_id = self.component_structure_tree.item(
+                            self.component_structure_tree.selection()[0], "values")[0]
+                        self.load_structure_components_enhanced(structure_id)
+                        self.refresh_component_status()
+                else:
+                    Messagebox.show_error("Failed to update component status", "Error")
+
+    def update_structure_status(self, event=None):
+        """Update the overall structure status (placeholder for future enhancement)"""
+        # This could be used to track overall structure completion status
+        # For now, it's calculated based on component status
+        pass
+
+    def force_structure_tree_refresh(self):
+        """Force refresh of the structure tree display"""
+        print("DEBUG: Force refreshing structure tree")
+        
+        if not hasattr(self, 'component_structure_tree'):
+            print("ERROR: component_structure_tree doesn't exist!")
+            return
+        
+        # Clear and reload
+        for item in self.component_structure_tree.get_children():
+            self.component_structure_tree.delete(item)
+        
+        # Add a test item to verify the tree is working
+        test_item = self.component_structure_tree.insert(
+            "", "end", 
+            values=("TEST-01", "CB", "Test", "1/1"),
+            tags=("test",)
+        )
+        print(f"Added test item: {test_item}")
+        
+        # Force update
+        self.component_structure_tree.update_idletasks()
+        self.component_structure_tree.update()
+        
+        # Check if test item is visible
+        children = self.component_structure_tree.get_children()
+        print(f"After test insert, tree has {len(children)} children")
+        
+        # Remove test item and load real data
+        self.component_structure_tree.delete(test_item)
+        self.load_structures_for_components()
 
     def add_component(self):
         """Add a new component to the selected structure"""
@@ -1001,7 +2604,7 @@ class StructureManagementApp:
         ttk.Label(main_frame, text="Status:").pack(anchor="w", pady=(10, 5))
         
         status_var = tk.StringVar()
-        status_options = ["pending", "ordered", "shipped", "delivered", "installed"]
+        status_options = ["pending", "ordered", "approved", "delivered", "installed"]
         status_combo = ttk.Combobox(main_frame, textvariable=status_var, values=status_options, state="readonly")
         status_combo.pack(fill="x", pady=(0, 10))
         status_combo.current(0)  # Default to "pending"
@@ -1116,7 +2719,7 @@ class StructureManagementApp:
         ).pack(side="right", padx=5)
 
     def update_component(self):
-        """Update the status of a component"""
+        """DEPRECATED: Use update_component_status or show_component_update_dialog instead. Update the status of a component"""
         # Get selected component
         selection = self.component_tree.selection()
         if not selection:
@@ -1160,7 +2763,7 @@ class StructureManagementApp:
         ttk.Label(main_frame, text="Status:").pack(anchor="w", pady=(10, 5))
         
         status_var = tk.StringVar(value=current_status)
-        status_options = ["pending", "ordered", "shipped", "delivered", "installed"]
+        status_options = ["pending", "ordered", "approved", "delivered", "installed"]
         status_combo = ttk.Combobox(main_frame, textvariable=status_var, values=status_options, state="readonly")
         status_combo.pack(fill="x", pady=(0, 10))
         
@@ -1211,7 +2814,7 @@ class StructureManagementApp:
                     Messagebox.show_info("Component status updated successfully", "Success")
                     update_window.destroy()
                     # Refresh component list
-                    self.load_structure_components(None)
+                    self.load_structure_components()
                 else:
                     Messagebox.show_error("Failed to update component status", "Database Error")
             
@@ -1345,7 +2948,7 @@ class StructureManagementApp:
         report_text.tag_configure("data", font=("Consolas", 11))
         report_text.tag_configure("status-pending", font=("Consolas", 11), foreground="orange")
         report_text.tag_configure("status-ordered", font=("Consolas", 11), foreground="blue")
-        report_text.tag_configure("status-shipped", font=("Consolas", 11), foreground="purple")
+        report_text.tag_configure("status-approved", font=("Consolas", 11), foreground="purple")
         report_text.tag_configure("status-delivered", font=("Consolas", 11), foreground="green")
         report_text.tag_configure("status-installed", font=("Consolas", 11), foreground="green")
         
@@ -2377,7 +3980,7 @@ class StructureManagementApp:
         ).pack(pady=(20, 0))
 
     def add_structure(self):
-        """Add a new structure to the database based on form fields"""
+        """Add a new structure to the database based on form fields with auto-base component"""
         try:
             # Get the current project ID
             project = self.db.get_project_by_name(self.current_project, self.current_user.id)
@@ -2387,7 +3990,7 @@ class StructureManagementApp:
                     
             # Get structure data from form fields
             structure_id = self.entries['Structure ID:'].get()
-            structure_type = self.entries['Structure Type:'].get()
+            structure_type = self.entries['Structure Type:'].get().strip()
             
             # Validate required fields
             if not structure_id or not structure_type:
@@ -2451,24 +4054,27 @@ class StructureManagementApp:
             success = self.db.add_structure(new_structure, project.id)
             
             if success:
-                # Success message with ttkbootstrap styling
-                Messagebox.show_info(
-                    f"Structure {structure_id} added successfully", 
-                    "Success"
-                )
+                # Automatically add base component to the new structure
+                base_added = self.auto_add_base_to_new_structure(structure_id, project.id)
+                
+                # Success message with base component info
+                if base_added:
+                    message = f"Structure {structure_id} added successfully with base component"
+                else:
+                    message = f"Structure {structure_id} added successfully (base component could not be auto-added)"
+                
+                Messagebox.show_info(message, "Success")
                 
                 # Clear form fields
                 self.clear_structure_form()
                 
-                # Refresh structure list - assuming you're using a treeview now instead of listbox
+                # Refresh structure list
                 self.load_structures()
                 
-                # Add structure to the treeview
-                # self.structure_tree.insert(
-                #     "", 
-                #     "end", 
-                #     values=(structure_id, structure_type, "Active")
-                # )
+                # If we're on the component tracking tab, refresh that too
+                if hasattr(self, 'component_structure_tree'):
+                    self.load_structures_for_components()
+                    
             else:
                 # Error message with ttkbootstrap styling
                 Messagebox.show_error(
@@ -2845,7 +4451,7 @@ class StructureManagementApp:
                 return
                 
             # Get updated fields
-            structure_type = self.entries['Structure Type:'].get()
+            structure_type = self.entries['Structure Type:'].get().strip()
             
             # Validate required fields
             if not structure_id or not structure_type:

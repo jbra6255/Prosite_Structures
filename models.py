@@ -58,6 +58,7 @@ class StructureComponent:
     structure_id: str
     component_type_id: int
     status: str
+    project_id: Optional[int] = None
     id: Optional[int] = None
     component_type_name: Optional[str] = None
     order_date: Optional[datetime] = None

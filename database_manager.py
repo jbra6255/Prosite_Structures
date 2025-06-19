@@ -288,7 +288,7 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 now = datetime.now().isoformat()
                 
-                # Format dates properly
+                # Format dates properly - Fixed to handle None values correctly
                 order_date = component.order_date.isoformat() if component.order_date else None
                 expected_date = component.expected_delivery_date.isoformat() if component.expected_delivery_date else None
                 actual_date = component.actual_delivery_date.isoformat() if component.actual_delivery_date else None
@@ -304,6 +304,8 @@ class DatabaseManager:
                     component.status, order_date, expected_date, actual_date,
                     component.notes, now, now
                 ))
+                
+                self.logger.info(f"Added component {component.component_type_id} to structure {component.structure_id}")
                 return True
         except sqlite3.Error as e:
             self.logger.error(f"Error adding structure component: {e}", exc_info=True)
@@ -1170,21 +1172,17 @@ class DatabaseManager:
                 
                 rows = cursor.fetchall()
                 
-                # Debug: Print row information
                 for row in rows:
-                    print(f"Row: {row}")
-                    print(f"Type of row[3]: {type(row[3])}, Value: {row[3]}")
-                    
-                    # Try getting the id and name at least
+                    # row[0]=id, row[1]=name, row[2]=description, row[3]=project_id, row[4]=created_at, row[5]=updated_at
                     group = StructureGroup(
                         id=row[0],
                         name=row[1],
                         description=row[2],
-                        created_at=None,
-                        updated_at=None
+                        created_at=self.safe_date_parse(row[4]),
+                        updated_at=self.safe_date_parse(row[5])
                     )
                     groups.append(group)
-                    
+
                 return groups
         except Exception as e:
             self.logger.error(f"Error getting groups: {e}", exc_info=True)
@@ -1312,7 +1310,7 @@ class DatabaseManager:
             structure = Structure(
                 id=data.get('id'),
                 structure_id=data.get('structure_id', ''),
-                structure_type=data.get('structure_type', ''),
+                structure_type=data.get('structure_type', '').strip(),
                 rim_elevation=self._safe_float_convert(data.get('rim_elevation')),
                 invert_out_elevation=self._safe_float_convert(data.get('invert_out_elevation')),
                 run_designation=data.get('run_designation', 'A'),
@@ -1459,3 +1457,113 @@ class DatabaseManager:
         except sqlite3.Error as e:
             print(f"Error deleting group: {e}")
             return False
+        
+    def update_component_status_enhanced(self, component_id: int, status: str, notes: str = None,
+                               order_date: datetime = None, expected_delivery_date: datetime = None,
+                               actual_delivery_date: datetime = None) -> bool:
+        """Update a component's status with all date fields"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                
+                # Format dates properly
+                order_date_str = order_date.isoformat() if order_date else None
+                expected_date_str = expected_delivery_date.isoformat() if expected_delivery_date else None
+                delivery_date_str = actual_delivery_date.isoformat() if actual_delivery_date else None
+                
+                cursor.execute('''
+                    UPDATE structure_components SET
+                        status = ?,
+                        notes = ?,
+                        order_date = ?,
+                        expected_delivery_date = ?,
+                        actual_delivery_date = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                ''', (status, notes, order_date_str, expected_date_str, delivery_date_str, now, component_id))
+                    
+                return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            self.logger.error(f"Error updating component status enhanced: {e}", exc_info=True)
+            return False
+    
+    def get_structure_components_with_dates(self, structure_id: str, project_id: int) -> List[StructureComponent]:
+        """Get all components for a structure with proper date handling"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT sc.id, sc.structure_id, sc.component_type_id, sc.status,
+                        sc.order_date, sc.expected_delivery_date, sc.actual_delivery_date,
+                        sc.notes, sc.created_at, sc.updated_at, ct.name
+                    FROM structure_components sc
+                    JOIN structure_component_types ct ON sc.component_type_id = ct.id
+                    WHERE sc.structure_id = ? AND sc.project_id = ?
+                    ORDER BY ct.name
+                ''', (structure_id, project_id))
+                
+                components = []
+                for row in cursor.fetchall():
+                    # Enhanced date parsing
+                    order_date = self.parse_component_date(row[4])
+                    expected_date = self.parse_component_date(row[5])
+                    actual_date = self.parse_component_date(row[6])
+                    
+                    components.append(StructureComponent(
+                        id=row[0],
+                        structure_id=row[1],
+                        component_type_id=row[2],
+                        status=row[3],
+                        order_date=order_date,
+                        expected_delivery_date=expected_date,
+                        actual_delivery_date=actual_date,
+                        notes=row[7],
+                        created_at=self.safe_date_parse(row[8]),
+                        updated_at=self.safe_date_parse(row[9]),
+                        component_type_name=row[10],
+                        project_id=project_id
+                    ))
+                return components
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting structure components with dates: {e}", exc_info=True)
+            return []
+        
+    def parse_component_date(self, date_value):
+        """Enhanced date parsing specifically for component dates"""
+        if not date_value:
+            return None
+            
+        # If it's already a datetime object
+        if isinstance(date_value, datetime):
+            return date_value
+            
+        # Try parsing as ISO format first
+        try:
+            return datetime.fromisoformat(str(date_value))
+        except ValueError:
+            pass
+            
+        # Try parsing as MM/DD/YYYY format
+        try:
+            return datetime.strptime(str(date_value), "%m/%d/%Y")
+        except ValueError:
+            pass
+            
+        # Try parsing as YYYY-MM-DD format
+        try:
+            return datetime.strptime(str(date_value), "%Y-%m-%d")
+        except ValueError:
+            pass
+            
+        # Try parsing as timestamp (integer)
+        try:
+            if isinstance(date_value, int) or str(date_value).isdigit():
+                return datetime.fromtimestamp(int(date_value))
+        except (ValueError, OverflowError):
+            pass
+            
+        # Log parsing failures for debugging
+        self.logger.warning(f"Could not parse component date: {date_value} (type: {type(date_value)})")
+        return None
+    
