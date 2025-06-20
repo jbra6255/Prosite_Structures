@@ -385,7 +385,7 @@ class StructureManagementApp:
         # Create a modern layout with top navbar
         navbar = ttk.Frame(self.root, bootstyle="primary")
         navbar.pack(fill="x")
-    
+
         
         # Project title on left
         ttk.Label(
@@ -664,15 +664,25 @@ class StructureManagementApp:
         # Bind selection event to show details
         self.structure_tree.bind('<<TreeviewSelect>>', self.show_structure_details)
         
+        # Add right-click context menu for pipe ordering
+        self.structure_tree.bind('<Button-3>', self.show_structure_context_menu)
+        
         # Load structures for current project
         self.load_structures()
 
-         # Add a new tab for component tracking
+        # Add a new tab for component tracking
         self.components_frame = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.components_frame, text='Component Tracking')
         
         # Configure the components frame
         self.setup_components_tab()
+
+        # Add pipe tracking tab
+        self.pipe_tracking_frame = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.pipe_tracking_frame, text='Pipe Tracking')
+        
+        # Configure the pipe tracking frame
+        self.setup_pipe_tracking_tab()
 
     def create_menu_bar(self):
         """Create the application menu bar"""
@@ -924,6 +934,715 @@ class StructureManagementApp:
         self.load_structures_for_components()
         
         print("DEBUG: Components tab initialization finished")
+
+    def setup_pipe_tracking_tab(self):
+        """Set up the pipe tracking tab with totals summary section"""
+        print("Debug: Setting up pipe tracking tab")
+        
+        # Configure pipe tracking frame for proper expansion
+        self.pipe_tracking_frame.columnconfigure(0, weight=1)
+        self.pipe_tracking_frame.rowconfigure(1, weight=1)  # Changed to make middle section expandable
+        
+        # === TOP SECTION: Project Pipe Totals Summary ===
+        totals_frame = ttk.Labelframe(self.pipe_tracking_frame, text="Project Pipe Summary", padding=10)
+        totals_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=(5, 10))
+        totals_frame.columnconfigure(1, weight=1)
+        
+        # Summary stats frame
+        stats_frame = ttk.Frame(totals_frame)
+        stats_frame.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        
+        # Create summary labels
+        self.total_pipe_length_label = ttk.Label(stats_frame, text="Total Pipe: 0.00 ft", font=("Helvetica", 12, "bold"))
+        self.total_pipe_length_label.grid(row=0, column=0, padx=10, sticky="w")
+        
+        self.delivered_pipe_length_label = ttk.Label(stats_frame, text="Delivered: 0.00 ft", font=("Helvetica", 12, "bold"), bootstyle="success")
+        self.delivered_pipe_length_label.grid(row=0, column=1, padx=10, sticky="w")
+        
+        self.pending_pipe_length_label = ttk.Label(stats_frame, text="Pending: 0.00 ft", font=("Helvetica", 12, "bold"), bootstyle="warning")
+        self.pending_pipe_length_label.grid(row=0, column=2, padx=10, sticky="w")
+        
+        self.completion_percentage_label = ttk.Label(stats_frame, text="0% Complete", font=("Helvetica", 12, "bold"), bootstyle="info")
+        self.completion_percentage_label.grid(row=0, column=3, padx=10, sticky="w")
+        
+        # Progress bar
+        progress_frame = ttk.Frame(totals_frame)
+        progress_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        progress_frame.columnconfigure(0, weight=1)
+        
+        ttk.Label(progress_frame, text="Delivery Progress:", font=("Helvetica", 10)).grid(row=0, column=0, sticky="w")
+        self.delivery_progress = ttk.Progressbar(progress_frame, mode="determinate", bootstyle="success-striped")
+        self.delivery_progress.grid(row=1, column=0, sticky="ew", pady=(5, 0))
+        
+        # Pipe type breakdown table
+        breakdown_frame = ttk.Labelframe(totals_frame, text="Breakdown by Pipe Type", padding=5)
+        breakdown_frame.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        breakdown_frame.columnconfigure(0, weight=1)
+        
+        # Create treeview for pipe type breakdown
+        breakdown_columns = ("PIPE_TYPE", "DIAMETER", "TOTAL_LENGTH", "DELIVERED", "PENDING", "PROGRESS")
+        self.pipe_totals_tree = ttk.Treeview(
+            breakdown_frame,
+            columns=breakdown_columns,
+            show="headings",
+            height=6
+        )
+        
+        # Configure columns
+        self.pipe_totals_tree.heading("PIPE_TYPE", text="Pipe Type", anchor="center")
+        self.pipe_totals_tree.heading("DIAMETER", text="Diameter", anchor="center")
+        self.pipe_totals_tree.heading("TOTAL_LENGTH", text="Total (ft)", anchor="center")
+        self.pipe_totals_tree.heading("DELIVERED", text="Delivered (ft)", anchor="center")
+        self.pipe_totals_tree.heading("PENDING", text="Pending (ft)", anchor="center")
+        self.pipe_totals_tree.heading("PROGRESS", text="Progress", anchor="center")
+        
+        self.pipe_totals_tree.column("PIPE_TYPE", width=120, anchor="center")
+        self.pipe_totals_tree.column("DIAMETER", width=80, anchor="center")
+        self.pipe_totals_tree.column("TOTAL_LENGTH", width=100, anchor="center")
+        self.pipe_totals_tree.column("DELIVERED", width=100, anchor="center")
+        self.pipe_totals_tree.column("PENDING", width=100, anchor="center")
+        self.pipe_totals_tree.column("PROGRESS", width=100, anchor="center")
+        
+        # Configure progress tags
+        self.pipe_totals_tree.tag_configure("complete", background="#d4edda", foreground="#155724")
+        self.pipe_totals_tree.tag_configure("in_progress", background="#fff3cd", foreground="#856404")
+        self.pipe_totals_tree.tag_configure("not_started", background="#f8d7da", foreground="#721c24")
+        
+        # Add scrollbar for breakdown
+        totals_scrollbar = ttk.Scrollbar(breakdown_frame, orient="vertical", command=self.pipe_totals_tree.yview)
+        self.pipe_totals_tree.configure(yscrollcommand=totals_scrollbar.set)
+        
+        # Pack breakdown treeview and scrollbar
+        self.pipe_totals_tree.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        totals_scrollbar.grid(row=0, column=1, sticky="ns")
+        
+        # Refresh button for totals
+        refresh_totals_btn = ttk.Button(
+            breakdown_frame,
+            text="Refresh Totals",
+            bootstyle="primary-outline",
+            command=self.calculate_project_pipe_totals
+        )
+        refresh_totals_btn.grid(row=1, column=0, pady=(10, 0), sticky="w")
+        
+        # === MIDDLE SECTION: Order Management (Modified) ===
+        main_container = ttk.Frame(self.pipe_tracking_frame)
+        main_container.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        main_container.columnconfigure(0, weight=1)
+        main_container.columnconfigure(1, weight=2)
+        main_container.rowconfigure(0, weight=1)
+        
+        # === LEFT SIDE: Pipe Order Summary ===
+        order_summary_frame = ttk.Labelframe(main_container, text="Pipe Orders", padding=10)
+        order_summary_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        order_summary_frame.columnconfigure(0, weight=1)
+        order_summary_frame.rowconfigure(1, weight=1)
+        
+        # Filter controls at the top
+        filter_frame = ttk.Frame(order_summary_frame)
+        filter_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        filter_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(filter_frame, text="Filter:").grid(row=0, column=0, padx=(0, 5), sticky="w")
+        self.pipe_filter_var = tk.StringVar(value="All Orders")
+        filter_combo = ttk.Combobox(
+            filter_frame, 
+            textvariable=self.pipe_filter_var, 
+            values=["All Orders", "Pending", "Ordered", "In Transit", "Delivered", "By Pipe Type"],
+            state="readonly"
+        )
+        filter_combo.grid(row=0, column=1, sticky="ew")
+        filter_combo.bind('<<ComboboxSelected>>', self.filter_pipe_orders)
+        
+        # Pipe orders treeview frame
+        orders_tree_frame = ttk.Frame(order_summary_frame)
+        orders_tree_frame.grid(row=1, column=0, sticky="nsew")
+        orders_tree_frame.columnconfigure(0, weight=1)
+        orders_tree_frame.rowconfigure(0, weight=1)
+        
+        # Pipe orders treeview
+        columns = ("ORDER", "PIPE_TYPE", "DIAMETER", "TOTAL_LENGTH", "STATUS", "ORDER_DATE")
+        self.pipe_orders_tree = ttk.Treeview(
+            orders_tree_frame,
+            columns=columns,
+            show="headings",
+            selectmode="browse"
+        )
+        
+        # Define column headings and widths
+        self.pipe_orders_tree.heading("ORDER", text="Order #", anchor="center")
+        self.pipe_orders_tree.heading("PIPE_TYPE", text="Pipe Type", anchor="center")
+        self.pipe_orders_tree.heading("DIAMETER", text="Diameter", anchor="center")
+        self.pipe_orders_tree.heading("TOTAL_LENGTH", text="Total Length", anchor="center")
+        self.pipe_orders_tree.heading("STATUS", text="Status", anchor="center")
+        self.pipe_orders_tree.heading("ORDER_DATE", text="Order Date", anchor="center")
+        
+        self.pipe_orders_tree.column("ORDER", width=80, anchor="center")
+        self.pipe_orders_tree.column("PIPE_TYPE", width=120, anchor="center")
+        self.pipe_orders_tree.column("DIAMETER", width=80, anchor="center")
+        self.pipe_orders_tree.column("TOTAL_LENGTH", width=100, anchor="center")
+        self.pipe_orders_tree.column("STATUS", width=100, anchor="center")
+        self.pipe_orders_tree.column("ORDER_DATE", width=100, anchor="center")
+        
+        # Configure status tags for color coding
+        self.pipe_orders_tree.tag_configure("pending", background="#fff3cd", foreground="#856404")
+        self.pipe_orders_tree.tag_configure("ordered", background="#cce7ff", foreground="#004085")
+        self.pipe_orders_tree.tag_configure("in_transit", background="#e2e3e5", foreground="#383d41")
+        self.pipe_orders_tree.tag_configure("delivered", background="#d4edda", foreground="#155724")
+        
+        # Add scrollbar
+        orders_scrollbar = ttk.Scrollbar(orders_tree_frame, orient="vertical", command=self.pipe_orders_tree.yview)
+        self.pipe_orders_tree.configure(yscrollcommand=orders_scrollbar.set)
+        
+        # Pack orders treeview and scrollbar
+        self.pipe_orders_tree.grid(row=0, column=0, sticky="nsew")
+        orders_scrollbar.grid(row=0, column=1, sticky="ns")
+        
+        # Orders action buttons
+        orders_action_frame = ttk.Frame(order_summary_frame)
+        orders_action_frame.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        
+        ttk.Button(
+            orders_action_frame,
+            text="New Order",
+            bootstyle="success-outline",
+            command=self.create_new_pipe_order
+        ).pack(side="left", padx=2)
+        
+        ttk.Button(
+            orders_action_frame,
+            text="Update Status",
+            bootstyle="primary-outline",
+            command=self.update_pipe_order_status
+        ).pack(side="left", padx=2)
+        
+        ttk.Button(
+            orders_action_frame,
+            text="Refresh",
+            bootstyle="secondary-outline",
+            command=self.refresh_pipe_orders
+        ).pack(side="right", padx=2)
+
+        ttk.Button(
+            orders_action_frame,
+            text="Delete Order",
+            bootstyle="danger-outline",
+            command=self.delete_pipe_order
+        ).pack(side="left", padx=2)
+        
+        # === RIGHT SIDE: Order Details and Structure Breakdown ===
+        details_frame = ttk.Labelframe(main_container, text="Order Details", padding=10)
+        details_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        details_frame.columnconfigure(0, weight=1)
+        details_frame.rowconfigure(1, weight=1)
+        
+        # Selected order info header
+        self.selected_order_frame = ttk.Frame(details_frame)
+        self.selected_order_frame.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        self.selected_order_frame.columnconfigure(0, weight=1)
+        
+        info_align_frame = ttk.Frame(self.selected_order_frame)
+        info_align_frame.grid(row=0, column=0, sticky="ew")
+        info_align_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(info_align_frame, text="Selected Order:", font=("Helvetica", 10, "bold")).grid(row=0, column=0, sticky="w")
+        self.selected_order_label = ttk.Label(info_align_frame, text="None", font=("Helvetica", 10))
+        self.selected_order_label.grid(row=0, column=1, sticky="w", padx=10)
+        
+        # Order breakdown area
+        breakdown_frame = ttk.Frame(details_frame)
+        breakdown_frame.grid(row=1, column=0, sticky="nsew")
+        breakdown_frame.columnconfigure(0, weight=1)
+        breakdown_frame.rowconfigure(0, weight=1)
+        
+        # Order breakdown treeview
+        columns = ("STRUCTURE", "PIPE_TYPE", "DIAMETER", "LENGTH", "DELIVERED", "NOTES")
+        self.order_breakdown_tree = ttk.Treeview(
+            breakdown_frame,
+            columns=columns,
+            show="headings",
+            selectmode="browse"
+        )
+        
+        # Define column headings and widths
+        self.order_breakdown_tree.heading("STRUCTURE", text="Structure", anchor="center")
+        self.order_breakdown_tree.heading("PIPE_TYPE", text="Pipe Type", anchor="center")
+        self.order_breakdown_tree.heading("DIAMETER", text="Diameter", anchor="center")
+        self.order_breakdown_tree.heading("LENGTH", text="Length", anchor="center")
+        self.order_breakdown_tree.heading("DELIVERED", text="Delivered", anchor="center")
+        self.order_breakdown_tree.heading("NOTES", text="Notes", anchor="center")
+        
+        self.order_breakdown_tree.column("STRUCTURE", width=100, anchor="center")
+        self.order_breakdown_tree.column("PIPE_TYPE", width=120, anchor="center")
+        self.order_breakdown_tree.column("DIAMETER", width=80, anchor="center")
+        self.order_breakdown_tree.column("LENGTH", width=80, anchor="center")
+        self.order_breakdown_tree.column("DELIVERED", width=80, anchor="center")
+        self.order_breakdown_tree.column("NOTES", width=150, anchor="center")
+        
+        # Configure delivery status tags
+        self.order_breakdown_tree.tag_configure("not_delivered", background="#f8d7da", foreground="#721c24")
+        self.order_breakdown_tree.tag_configure("delivered", background="#d4edda", foreground="#155724")
+        self.order_breakdown_tree.tag_configure("partial", background="#fff3cd", foreground="#856404")
+        
+        # Add scrollbar for breakdown
+        breakdown_scrollbar = ttk.Scrollbar(breakdown_frame, orient="vertical", command=self.order_breakdown_tree.yview)
+        self.order_breakdown_tree.configure(yscrollcommand=breakdown_scrollbar.set)
+        
+        # Place breakdown treeview and scrollbar
+        self.order_breakdown_tree.grid(row=0, column=0, sticky="nsew")
+        breakdown_scrollbar.grid(row=0, column=1, sticky="ns")
+        
+        # Breakdown action buttons
+        breakdown_action_frame = ttk.Frame(details_frame)
+        breakdown_action_frame.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        
+        # Left side buttons
+        left_buttons = ttk.Frame(breakdown_action_frame)
+        left_buttons.pack(side="left")
+        
+        ttk.Button(
+            left_buttons,
+            text="Mark Delivered",
+            bootstyle="success-outline",
+            command=self.mark_pipe_delivered
+        ).pack(side="left", padx=2)
+        
+        ttk.Button(
+            left_buttons,
+            text="Add Notes",
+            bootstyle="info-outline",
+            command=self.add_pipe_notes
+        ).pack(side="left", padx=2)
+        
+        # Right side buttons
+        right_buttons = ttk.Frame(breakdown_action_frame)
+        right_buttons.pack(side="right")
+        
+        ttk.Button(
+            right_buttons,
+            text="Generate Report",
+            bootstyle="secondary-outline",
+            command=self.generate_pipe_delivery_report
+        ).pack(side="left", padx=2)
+        
+        # Bind events
+        self.pipe_orders_tree.bind('<<TreeviewSelect>>', self.on_pipe_order_selected)
+        self.order_breakdown_tree.bind('<Button-3>', self.show_pipe_breakdown_context_menu)
+        
+        # Load initial data
+        self.load_pipe_orders()
+        self.calculate_project_pipe_totals()  # Calculate totals on startup
+
+        self.add_pipe_order_context_menu()
+        
+        print("DEBUG: Pipe tracking tab initialization finished")
+
+    def calculate_project_pipe_totals(self):
+        """Calculate total pipe quantities across the entire project"""
+        try:
+            # Get project ID
+            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            if not project:
+                return
+            
+            print("DEBUG: Calculating project pipe totals...")
+            
+            # Get all structures with pipe data
+            structures = self.db.get_all_structures(project.id)
+            structures_with_pipe = [s for s in structures if s.pipe_length and s.pipe_diameter and s.pipe_type]
+            
+            if not structures_with_pipe:
+                self._update_totals_display(0, 0, {})
+                return
+            
+            # Calculate totals by pipe type and diameter
+            pipe_totals = {}
+            total_project_length = 0
+            
+            for structure in structures_with_pipe:
+                # Create key for grouping
+                key = f"{structure.pipe_type}_{int(structure.pipe_diameter) if structure.pipe_diameter else 'unknown'}"
+                
+                if key not in pipe_totals:
+                    pipe_totals[key] = {
+                        'pipe_type': structure.pipe_type,
+                        'diameter': structure.pipe_diameter,
+                        'total_length': 0,
+                        'delivered_length': 0,
+                        'structures': []
+                    }
+                
+                pipe_totals[key]['total_length'] += structure.pipe_length
+                pipe_totals[key]['structures'].append(structure.structure_id)
+                total_project_length += structure.pipe_length
+            
+            # Get delivery information from pipe orders
+            total_delivered_length = self._calculate_delivered_pipe_totals(project.id, pipe_totals)
+            
+            # Update the display
+            self._update_totals_display(total_project_length, total_delivered_length, pipe_totals)
+            
+            print(f"DEBUG: Calculated totals - Total: {total_project_length:.2f}ft, Delivered: {total_delivered_length:.2f}ft")
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating project pipe totals: {e}", exc_info=True)
+            print(f"ERROR calculating pipe totals: {e}")
+
+    def _calculate_delivered_pipe_totals(self, project_id: int, pipe_totals: dict) -> float:
+        """Calculate delivered pipe quantities from orders"""
+        try:
+            total_delivered = 0
+            
+            # Get all pipe orders for this project
+            pipe_orders = self.db.get_pipe_orders(project_id)
+            
+            for order in pipe_orders:
+                if order.get('status', '').lower() in ['delivered', 'in_transit']:
+                    # Get order items
+                    order_items = self.db.get_pipe_order_items(order.get('id'))
+                    
+                    for item in order_items:
+                        delivered_length = item.get('delivered_length', 0)
+                        pipe_type = item.get('pipe_type', '')
+                        diameter = item.get('diameter', 0)
+                        
+                        # Update delivered amounts in pipe_totals
+                        key = f"{pipe_type}_{int(diameter) if diameter else 'unknown'}"
+                        if key in pipe_totals:
+                            pipe_totals[key]['delivered_length'] += delivered_length
+                        
+                        total_delivered += delivered_length
+            
+            return total_delivered
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating delivered pipe totals: {e}", exc_info=True)
+            return 0
+
+    def _update_totals_display(self, total_length: float, delivered_length: float, pipe_totals: dict):
+        """Update the totals display with calculated values"""
+        try:
+            pending_length = total_length - delivered_length
+            completion_percentage = (delivered_length / total_length * 100) if total_length > 0 else 0
+            
+            # Update summary labels
+            self.total_pipe_length_label.config(text=f"Total Pipe: {total_length:.2f} ft")
+            self.delivered_pipe_length_label.config(text=f"Delivered: {delivered_length:.2f} ft")
+            self.pending_pipe_length_label.config(text=f"Pending: {pending_length:.2f} ft")
+            self.completion_percentage_label.config(text=f"{completion_percentage:.1f}% Complete")
+            
+            # Update progress bar
+            self.delivery_progress['value'] = completion_percentage
+            
+            # Clear and update breakdown treeview
+            for item in self.pipe_totals_tree.get_children():
+                self.pipe_totals_tree.delete(item)
+            
+            # Populate breakdown by pipe type
+            for key, data in pipe_totals.items():
+                diameter_text = f"{int(data['diameter'])}\"" if data['diameter'] else "Unknown"
+                total_length = data['total_length']
+                delivered_length = data['delivered_length']
+                pending_length = total_length - delivered_length
+                progress_pct = (delivered_length / total_length * 100) if total_length > 0 else 0
+                
+                # Determine status tag
+                if progress_pct >= 100:
+                    tag = "complete"
+                elif progress_pct > 0:
+                    tag = "in_progress"
+                else:
+                    tag = "not_started"
+                
+                self.pipe_totals_tree.insert(
+                    "", "end",
+                    values=(
+                        data['pipe_type'],
+                        diameter_text,
+                        f"{total_length:.2f}",
+                        f"{delivered_length:.2f}",
+                        f"{pending_length:.2f}",
+                        f"{progress_pct:.1f}%"
+                    ),
+                    tags=(tag,)
+                )
+            
+            # Sort by pipe type for consistent display
+            children = self.pipe_totals_tree.get_children()
+            children_data = [(self.pipe_totals_tree.item(child, "values"), child) for child in children]
+            children_data.sort(key=lambda x: x[0][0])  # Sort by pipe type
+            
+            for i, (values, child) in enumerate(children_data):
+                self.pipe_totals_tree.move(child, "", i)
+                
+        except Exception as e:
+            self.logger.error(f"Error updating totals display: {e}", exc_info=True)
+
+    def delete_pipe_order(self):
+        """Delete the selected pipe order with confirmation"""
+        selection = self.pipe_orders_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a pipe order to delete", "No Order Selected")
+            return
+        
+        values = self.pipe_orders_tree.item(selection[0], "values")
+        order_number = values[0]
+        
+        # Skip separator rows
+        if "──" in order_number:
+            Messagebox.show_warning("Please select a valid pipe order", "Invalid Selection")
+            return
+        
+        # Get order details for confirmation
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Find the order ID
+        pipe_orders = self.db.get_pipe_orders(project.id)
+        order_id = None
+        order_details = None
+        
+        for order in pipe_orders:
+            if order.get('order_number') == order_number:
+                order_id = order.get('id')
+                order_details = order
+                break
+        
+        if not order_id:
+            Messagebox.show_error("Order not found", "Error")
+            return
+        
+        # Get detailed order information
+        detailed_order = self.db.get_pipe_order_details(order_id)
+        if not detailed_order:
+            Messagebox.show_error("Could not retrieve order details", "Error")
+            return
+        
+        # Show detailed confirmation dialog
+        self.show_delete_order_confirmation(order_id, detailed_order)
+
+    def show_delete_order_confirmation(self, order_id: int, order_details: dict):
+        """Show a detailed confirmation dialog for deleting a pipe order"""
+        # Create confirmation window
+        confirm_window = ttk.Toplevel(self.root)
+        confirm_window.title("Confirm Delete Pipe Order")
+        confirm_window.geometry("505x490")
+        confirm_window.transient(self.root)
+        confirm_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(confirm_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Warning icon and title
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            header_frame,
+            text="⚠️ Delete Pipe Order",
+            font=("Helvetica", 16, "bold"),
+            bootstyle="danger"
+        ).pack()
+        
+        ttk.Label(
+            header_frame,
+            text="This action cannot be undone!",
+            font=("Helvetica", 10),
+            bootstyle="warning"
+        ).pack(pady=(5, 0))
+        
+        # Order details section
+        details_frame = ttk.Labelframe(main_frame, text="Order Information", padding=10)
+        details_frame.pack(fill="x", pady=(0, 20))
+        
+        # Order details
+        details_text = f"""Order Number: {order_details['order_number']}
+    Supplier: {order_details.get('supplier', 'N/A')}
+    Status: {order_details['status'].title()}
+    Total Items: {order_details['item_count']}
+    Total Length: {order_details['total_length']:.2f} ft"""
+        
+        if order_details.get('order_date'):
+            try:
+                order_date = datetime.fromisoformat(order_details['order_date']).strftime("%m/%d/%Y")
+                details_text += f"\nOrder Date: {order_date}"
+            except:
+                pass
+        
+        if order_details.get('notes'):
+            details_text += f"\nNotes: {order_details['notes']}"
+        
+        ttk.Label(
+            details_frame,
+            text=details_text,
+            justify="left",
+            font=("Helvetica", 10)
+        ).pack(anchor="w")
+        
+        # Warning section
+        warning_frame = ttk.Labelframe(main_frame, text="Warning", padding=10)
+        warning_frame.pack(fill="x", pady=(0, 20))
+        
+        warning_text = """Deleting this order will:
+    • Remove the order and ALL associated pipe items
+    • Remove all delivery tracking for these items
+    • This action cannot be undone
+    • Consider updating the status instead of deleting"""
+        
+        ttk.Label(
+            warning_frame,
+            text=warning_text,
+            justify="left",
+            font=("Helvetica", 9),
+            bootstyle="warning"
+        ).pack(anchor="w")
+        
+        # Safety check - prevent deletion of delivered orders
+        if order_details['status'].lower() in ['delivered', 'in_transit']:
+            safety_frame = ttk.Labelframe(main_frame, text="Safety Check", padding=10)
+            safety_frame.pack(fill="x", pady=(0, 20))
+            
+            ttk.Label(
+                safety_frame,
+                text="⚠️ This order has a status of 'Delivered' or 'In Transit'.\nDeletion is not recommended for orders with delivery progress.",
+                justify="left",
+                font=("Helvetica", 9, "bold"),
+                bootstyle="danger"
+            ).pack(anchor="w")
+            
+            # Add extra confirmation for delivered orders
+            confirm_var = tk.BooleanVar()
+            ttk.Checkbutton(
+                safety_frame,
+                text="I understand this order has delivery progress and still want to delete it",
+                variable=confirm_var,
+                bootstyle="danger"
+            ).pack(anchor="w", pady=(10, 0))
+        else:
+            confirm_var = tk.BooleanVar(value=True)  # No extra confirmation needed
+        
+        def confirm_deletion():
+            if not confirm_var.get():
+                Messagebox.show_warning("Please confirm that you want to delete this delivered/in-transit order", "Confirmation Required")
+                return
+            
+            # Perform the deletion
+            success = self.db.delete_pipe_order(order_id)
+            
+            if success:
+                Messagebox.show_info(f"Order '{order_details['order_number']}' deleted successfully", "Order Deleted")
+                confirm_window.destroy()
+                
+                # Refresh the pipe orders view
+                self.refresh_pipe_orders()
+                
+                # Clear order breakdown if this order was selected
+                self.selected_order_label.config(text="None")
+                self.clear_order_breakdown()
+                
+            else:
+                Messagebox.show_error("Failed to delete the order", "Deletion Failed")
+        
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        # Delete button
+        ttk.Button(
+            button_frame,
+            text="Delete Order",
+            bootstyle="danger",
+            command=confirm_deletion
+        ).pack(side="left", padx=5)
+        
+        # Cancel button
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=confirm_window.destroy
+        ).pack(side="right", padx=5)
+
+    def add_pipe_order_context_menu(self):
+        """Add right-click context menu to pipe orders tree"""
+        def show_order_context_menu(event):
+            # Get the item under the cursor
+            item = self.pipe_orders_tree.identify_row(event.y)
+            if not item:
+                return
+            
+            # Select the item
+            self.pipe_orders_tree.selection_set(item)
+            
+            # Get order details
+            values = self.pipe_orders_tree.item(item, "values")
+            if not values or "──" in values[0]:  # Skip separator rows
+                return
+            
+            order_number = values[0]
+            order_status = values[4].lower()
+            
+            # Create context menu
+            context_menu = tk.Menu(self.root, tearoff=0)
+            
+            context_menu.add_command(
+                label="View Details",
+                command=lambda: self.on_pipe_order_selected(None)
+            )
+            
+            context_menu.add_separator()
+            
+            context_menu.add_command(
+                label="Update Status",
+                command=self.update_pipe_order_status
+            )
+            
+            context_menu.add_separator()
+            
+            # Different options based on status
+            if order_status in ['pending', 'ordered']:
+                context_menu.add_command(
+                    label="Edit Order",
+                    command=lambda: self.edit_pipe_order(order_number)
+                )
+            
+            context_menu.add_command(
+                label="Duplicate Order",
+                command=lambda: self.duplicate_pipe_order(order_number)
+            )
+            
+            context_menu.add_separator()
+            
+            # Delete option with warning color for delivered orders
+            if order_status in ['delivered', 'in_transit']:
+                context_menu.add_command(
+                    label="⚠️ Delete Order (Delivered)",
+                    command=self.delete_pipe_order
+                )
+            else:
+                context_menu.add_command(
+                    label="Delete Order",
+                    command=self.delete_pipe_order
+                )
+            
+            # Show the menu
+            try:
+                context_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                context_menu.grab_release()
+        
+        # Bind the context menu to the pipe orders tree
+        self.pipe_orders_tree.bind('<Button-3>', show_order_context_menu)
+
+    def edit_pipe_order(self, order_number: str):
+        """Edit an existing pipe order (placeholder for future implementation)"""
+        Messagebox.show_info(f"Edit functionality for order '{order_number}' coming soon", "Feature Coming Soon")
+
+    def duplicate_pipe_order(self, order_number: str):
+        """Duplicate an existing pipe order (placeholder for future implementation)"""
+        Messagebox.show_info(f"Duplicate functionality for order '{order_number}' coming soon", "Feature Coming Soon")
 
     def on_notebook_tab_changed(self, event):
         """Handle notebook tab changes to refresh data when switching to component tracking"""
@@ -1361,6 +2080,775 @@ class StructureManagementApp:
             context_menu.tk_popup(event.x_root, event.y_root)
         finally:
             context_menu.grab_release()
+
+    def show_structure_context_menu(self, event):
+        """Show right-click context menu for structure management and pipe ordering"""
+        # Get selected structures
+        selected_items = self.structure_tree.selection()
+        if not selected_items:
+            return
+        
+        # Filter out separator rows and get valid structure IDs
+        valid_structures = []
+        for item in selected_items:
+            values = self.structure_tree.item(item, "values")
+            if values and values[0] and "─── Run" not in values[0] and values[0].strip():
+                valid_structures.append(item)
+        
+        if not valid_structures:
+            return
+        
+        # Create context menu
+        context_menu = tk.Menu(self.root, tearoff=0)
+        
+        if len(valid_structures) == 1:
+            context_menu.add_command(
+                label="View Details",
+                command=lambda: self.show_structure_details(None)
+            )
+            context_menu.add_separator()
+        
+        # Pipe ordering options
+        pipe_menu = tk.Menu(context_menu, tearoff=0)
+        context_menu.add_cascade(label="Pipe Management", menu=pipe_menu)
+        
+        pipe_menu.add_command(
+            label="Calculate Pipe Totals",
+            command=lambda: self.calculate_pipe_totals_for_selection(valid_structures)
+        )
+        
+        pipe_menu.add_command(
+            label="Order Pipe",
+            command=lambda: self.order_pipe_for_selection(valid_structures)
+        )
+        
+        pipe_menu.add_command(
+            label="View Pipe Details",
+            command=lambda: self.view_pipe_details_for_selection(valid_structures)
+        )
+        
+        context_menu.add_separator()
+        
+        # Group operations
+        if len(valid_structures) > 1:
+            context_menu.add_command(
+                label=f"Create Group ({len(valid_structures)} structures)",
+                command=self.create_group
+            )
+        
+        # Show the menu
+        try:
+            context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            context_menu.grab_release()
+
+    def calculate_pipe_totals_for_selection(self, selected_items):
+        """Calculate pipe totals for selected structures and show in a dialog"""
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Extract structure data from selected items
+        structures_data = []
+        for item in selected_items:
+            values = self.structure_tree.item(item, "values")
+            if values and values[0] and "─── Run" not in values[0]:
+                structure_id = values[0]
+                # Get full structure details from database
+                structure = self.db.get_structure(structure_id, project.id)
+                if structure and structure.pipe_length and structure.pipe_diameter and structure.pipe_type:
+                    structures_data.append(structure)
+        
+        if not structures_data:
+            Messagebox.show_info("No structures with pipe data found in selection", "No Pipe Data")
+            return
+        
+        # Calculate totals by pipe type and diameter
+        pipe_totals = {}
+        
+        for structure in structures_data:
+            # Create key for grouping
+            key = f"{structure.pipe_type} - {int(structure.pipe_diameter)}\"" if structure.pipe_diameter else f"{structure.pipe_type} - Unknown Size"
+            
+            if key not in pipe_totals:
+                pipe_totals[key] = {
+                    'pipe_type': structure.pipe_type,
+                    'diameter': structure.pipe_diameter,
+                    'total_length': 0,
+                    'structures': []
+                }
+            
+            pipe_totals[key]['total_length'] += structure.pipe_length
+            pipe_totals[key]['structures'].append({
+                'id': structure.structure_id,
+                'length': structure.pipe_length
+            })
+        
+        # Create results dialog
+        results_window = ttk.Toplevel(self.root)
+        results_window.title("Pipe Totals Calculation")
+        results_window.geometry("700x500")
+        results_window.transient(self.root)
+        results_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(results_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Pipe Totals for Selected Structures", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Summary info
+        summary_frame = ttk.Labelframe(main_frame, text="Selection Summary", padding=10)
+        summary_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            summary_frame,
+            text=f"Structures analyzed: {len(structures_data)}",
+            font=("Helvetica", 12)
+        ).pack(anchor="w")
+        
+        ttk.Label(
+            summary_frame,
+            text=f"Pipe types found: {len(pipe_totals)}",
+            font=("Helvetica", 12)
+        ).pack(anchor="w")
+        
+        # Totals table
+        totals_frame = ttk.Labelframe(main_frame, text="Pipe Totals by Type", padding=10)
+        totals_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        # Create treeview for totals
+        columns = ("PIPE_TYPE", "DIAMETER", "TOTAL_LENGTH", "STRUCTURE_COUNT")
+        totals_tree = ttk.Treeview(
+            totals_frame,
+            columns=columns,
+            show="headings",
+            height=8
+        )
+        
+        # Configure columns
+        totals_tree.heading("PIPE_TYPE", text="Pipe Type", anchor="center")
+        totals_tree.heading("DIAMETER", text="Diameter", anchor="center")
+        totals_tree.heading("TOTAL_LENGTH", text="Total Length (ft)", anchor="center")
+        totals_tree.heading("STRUCTURE_COUNT", text="# Structures", anchor="center")
+        
+        totals_tree.column("PIPE_TYPE", width=150, anchor="center")
+        totals_tree.column("DIAMETER", width=100, anchor="center")
+        totals_tree.column("TOTAL_LENGTH", width=150, anchor="center")
+        totals_tree.column("STRUCTURE_COUNT", width=120, anchor="center")
+        
+        # Add scrollbar
+        totals_scrollbar = ttk.Scrollbar(totals_frame, orient="vertical", command=totals_tree.yview)
+        totals_tree.configure(yscrollcommand=totals_scrollbar.set)
+        
+        # Pack treeview and scrollbar
+        totals_tree.pack(side="left", fill="both", expand=True)
+        totals_scrollbar.pack(side="right", fill="y")
+        
+        # Populate totals
+        grand_total_length = 0
+        for key, data in pipe_totals.items():
+            diameter_text = f"{int(data['diameter'])}\"" if data['diameter'] else "Unknown"
+            total_length = data['total_length']
+            grand_total_length += total_length
+            
+            totals_tree.insert(
+                "", "end",
+                values=(
+                    data['pipe_type'],
+                    diameter_text,
+                    f"{total_length:.2f}",
+                    len(data['structures'])
+                )
+            )
+        
+        # Grand total
+        grand_total_frame = ttk.Frame(main_frame)
+        grand_total_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            grand_total_frame,
+            text=f"Grand Total Length: {grand_total_length:.2f} feet",
+            font=("Helvetica", 14, "bold"),
+            bootstyle="success"
+        ).pack()
+        
+        # Action buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(
+            button_frame,
+            text="Create Order",
+            bootstyle="primary",
+            command=lambda: self.create_pipe_order_from_totals(pipe_totals, results_window)
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Export to CSV",
+            bootstyle="info",
+            command=lambda: self.export_pipe_totals_csv(pipe_totals)
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Close",
+            bootstyle="secondary",
+            command=results_window.destroy
+        ).pack(side="right", padx=5)
+
+    def order_pipe_for_selection(self, selected_items):
+        """Create a pipe order for selected structures"""
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Extract structure data from selected items
+        structures_data = []
+        for item in selected_items:
+            values = self.structure_tree.item(item, "values")
+            if values and values[0] and "─── Run" not in values[0]:
+                structure_id = values[0]
+                # Get full structure details from database
+                structure = self.db.get_structure(structure_id, project.id)
+                if structure and structure.pipe_length and structure.pipe_diameter and structure.pipe_type:
+                    structures_data.append(structure)
+        
+        if not structures_data:
+            Messagebox.show_info("No structures with pipe data found in selection", "No Pipe Data")
+            return
+        
+        # Group by pipe type and diameter for ordering
+        pipe_groups = {}
+        for structure in structures_data:
+            key = f"{structure.pipe_type}_{int(structure.pipe_diameter) if structure.pipe_diameter else 'unknown'}"
+            
+            if key not in pipe_groups:
+                pipe_groups[key] = {
+                    'pipe_type': structure.pipe_type,
+                    'diameter': structure.pipe_diameter,
+                    'total_length': 0,
+                    'structures': []
+                }
+            
+            pipe_groups[key]['total_length'] += structure.pipe_length
+            pipe_groups[key]['structures'].append(structure)
+        
+        # Create order dialog
+        order_window = ttk.Toplevel(self.root)
+        order_window.title("Create Pipe Order")
+        order_window.geometry("600x700")
+        order_window.transient(self.root)
+        order_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(order_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Create Pipe Order", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Order information section
+        order_info_frame = ttk.Labelframe(main_frame, text="Order Information", padding=10)
+        order_info_frame.pack(fill="x", pady=(0, 20))
+        
+        # Order details form
+        form_frame = ttk.Frame(order_info_frame)
+        form_frame.pack(fill="x")
+        form_frame.columnconfigure(1, weight=1)
+        
+        # Order number
+        ttk.Label(form_frame, text="Order Number:").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+        order_number_entry = ttk.Entry(form_frame)
+        order_number_entry.grid(row=0, column=1, sticky="ew", pady=5)
+        
+        # Generate default order number
+        from datetime import datetime
+        default_order_num = f"PO-{datetime.now().strftime('%Y%m%d')}-{len(structures_data):03d}"
+        order_number_entry.insert(0, default_order_num)
+        
+        # Supplier
+        ttk.Label(form_frame, text="Supplier:").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=5)
+        supplier_entry = ttk.Entry(form_frame)
+        supplier_entry.grid(row=1, column=1, sticky="ew", pady=5)
+        
+        # Expected delivery date
+        ttk.Label(form_frame, text="Expected Delivery:").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=5)
+        delivery_date_frame = ttk.Frame(form_frame)
+        delivery_date_frame.grid(row=2, column=1, sticky="ew", pady=5)
+        delivery_date_frame.columnconfigure(0, weight=1)
+        
+        delivery_date_entry = ttk.Entry(delivery_date_frame)
+        delivery_date_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        ttk.Button(
+            delivery_date_frame,
+            text="📅",
+            width=3,
+            command=lambda: self.open_date_picker(delivery_date_entry)
+        ).pack(side="right")
+        
+        # Notes
+        ttk.Label(form_frame, text="Notes:").grid(row=3, column=0, sticky="nw", padx=(0, 10), pady=5)
+        notes_text = tk.Text(form_frame, height=3, wrap="word")
+        notes_text.grid(row=3, column=1, sticky="ew", pady=5)
+        
+        # Pipe breakdown section
+        breakdown_frame = ttk.Labelframe(main_frame, text="Pipe Breakdown", padding=10)
+        breakdown_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        # Create treeview for pipe breakdown
+        columns = ("PIPE_TYPE", "DIAMETER", "TOTAL_LENGTH", "STRUCTURES")
+        breakdown_tree = ttk.Treeview(
+            breakdown_frame,
+            columns=columns,
+            show="headings",
+            height=8
+        )
+        
+        # Configure columns
+        breakdown_tree.heading("PIPE_TYPE", text="Pipe Type", anchor="center")
+        breakdown_tree.heading("DIAMETER", text="Diameter", anchor="center")
+        breakdown_tree.heading("TOTAL_LENGTH", text="Length (ft)", anchor="center")
+        breakdown_tree.heading("STRUCTURES", text="Structures", anchor="center")
+        
+        breakdown_tree.column("PIPE_TYPE", width=120, anchor="center")
+        breakdown_tree.column("DIAMETER", width=80, anchor="center")
+        breakdown_tree.column("TOTAL_LENGTH", width=100, anchor="center")
+        breakdown_tree.column("STRUCTURES", width=200, anchor="center")
+        
+        # Add scrollbar
+        breakdown_scrollbar = ttk.Scrollbar(breakdown_frame, orient="vertical", command=breakdown_tree.yview)
+        breakdown_tree.configure(yscrollcommand=breakdown_scrollbar.set)
+        
+        # Pack treeview and scrollbar
+        breakdown_tree.pack(side="left", fill="both", expand=True)
+        breakdown_scrollbar.pack(side="right", fill="y")
+        
+        # Populate breakdown
+        for key, data in pipe_groups.items():
+            diameter_text = f"{int(data['diameter'])}\"" if data['diameter'] else "Unknown"
+            structure_list = ", ".join([s.structure_id for s in data['structures']])
+            
+            breakdown_tree.insert(
+                "", "end",
+                values=(
+                    data['pipe_type'],
+                    diameter_text,
+                    f"{data['total_length']:.2f}",
+                    structure_list
+                )
+            )
+        
+        # Summary
+        total_length = sum(data['total_length'] for data in pipe_groups.values())
+        summary_frame = ttk.Frame(main_frame)
+        summary_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            summary_frame,
+            text=f"Total Length: {total_length:.2f} feet | Structures: {len(structures_data)} | Pipe Types: {len(pipe_groups)}",
+            font=("Helvetica", 12, "bold"),
+            bootstyle="info"
+        ).pack()
+        
+        def create_order():
+            try:
+                order_number = order_number_entry.get().strip()
+                supplier = supplier_entry.get().strip()
+                delivery_date_str = delivery_date_entry.get().strip()
+                notes = notes_text.get("1.0", tk.END).strip()
+                
+                # Validation
+                if not order_number:
+                    Messagebox.show_error("Please enter an order number", "Validation Error")
+                    return
+                
+                # Parse delivery date
+                delivery_date = None
+                if delivery_date_str:
+                    try:
+                        delivery_date = datetime.strptime(delivery_date_str, "%m/%d/%Y")
+                    except ValueError:
+                        Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+                        return
+                
+                # Create the pipe order in database
+                success = self.db.create_pipe_order(
+                    order_number=order_number,
+                    supplier=supplier,
+                    expected_delivery_date=delivery_date,
+                    notes=notes,
+                    pipe_groups=pipe_groups,
+                    project_id=project.id
+                )
+                
+                if success:
+                    Messagebox.show_info(f"Pipe order '{order_number}' created successfully", "Success")
+                    order_window.destroy()
+                    # Refresh pipe orders if we're on that tab
+                    if hasattr(self, 'pipe_orders_tree'):
+                        self.refresh_pipe_orders()
+                else:
+                    Messagebox.show_error("Failed to create pipe order", "Error")
+                    
+            except Exception as e:
+                self.logger.error(f"Error creating pipe order: {e}", exc_info=True)
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+        
+        # Action buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(
+            button_frame,
+            text="Create Order",
+            bootstyle="primary",
+            command=create_order
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=order_window.destroy
+        ).pack(side="right", padx=5)
+
+    def view_pipe_details_for_selection(self, selected_items):
+        """View detailed pipe information for selected structures"""
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Extract structure data from selected items
+        structures_data = []
+        for item in selected_items:
+            values = self.structure_tree.item(item, "values")
+            if values and values[0] and "─── Run" not in values[0]:
+                structure_id = values[0]
+                # Get full structure details from database
+                structure = self.db.get_structure(structure_id, project.id)
+                if structure:
+                    structures_data.append(structure)
+        
+        if not structures_data:
+            Messagebox.show_info("No structures found in selection", "No Data")
+            return
+        
+        # Create details window
+        details_window = ttk.Toplevel(self.root)
+        details_window.title("Pipe Details for Selected Structures")
+        details_window.geometry("900x600")
+        details_window.transient(self.root)
+        
+        # Main container
+        main_frame = ttk.Frame(details_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Pipe Details", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Summary info
+        summary_frame = ttk.Labelframe(main_frame, text="Summary", padding=10)
+        summary_frame.pack(fill="x", pady=(0, 20))
+        
+        # Calculate summary statistics
+        total_structures = len(structures_data)
+        structures_with_pipe = [s for s in structures_data if s.pipe_length and s.pipe_diameter and s.pipe_type]
+        structures_without_pipe = total_structures - len(structures_with_pipe)
+        
+        summary_text = f"Total Structures: {total_structures} | With Pipe Data: {len(structures_with_pipe)} | Missing Pipe Data: {structures_without_pipe}"
+        ttk.Label(summary_frame, text=summary_text, font=("Helvetica", 12)).pack()
+        
+        # Details table
+        details_frame = ttk.Labelframe(main_frame, text="Structure Pipe Details", padding=10)
+        details_frame.pack(fill="both", expand=True)
+        
+        # Create treeview for details
+        columns = ("STRUCTURE", "TYPE", "PIPE_TYPE", "DIAMETER", "LENGTH", "UPSTREAM", "STATUS")
+        details_tree = ttk.Treeview(
+            details_frame,
+            columns=columns,
+            show="headings",
+            height=15
+        )
+        
+        # Configure columns
+        details_tree.heading("STRUCTURE", text="Structure ID", anchor="center")
+        details_tree.heading("TYPE", text="Type", anchor="center")
+        details_tree.heading("PIPE_TYPE", text="Pipe Type", anchor="center")
+        details_tree.heading("DIAMETER", text="Diameter", anchor="center")
+        details_tree.heading("LENGTH", text="Length (ft)", anchor="center")
+        details_tree.heading("UPSTREAM", text="Upstream", anchor="center")
+        details_tree.heading("STATUS", text="Status", anchor="center")
+        
+        details_tree.column("STRUCTURE", width=100, anchor="center")
+        details_tree.column("TYPE", width=80, anchor="center")
+        details_tree.column("PIPE_TYPE", width=120, anchor="center")
+        details_tree.column("DIAMETER", width=80, anchor="center")
+        details_tree.column("LENGTH", width=100, anchor="center")
+        details_tree.column("UPSTREAM", width=100, anchor="center")
+        details_tree.column("STATUS", width=100, anchor="center")
+        
+        # Configure status tags
+        details_tree.tag_configure("complete", background="#d4edda", foreground="#155724")
+        details_tree.tag_configure("incomplete", background="#f8d7da", foreground="#721c24")
+        details_tree.tag_configure("partial", background="#fff3cd", foreground="#856404")
+        
+        # Add scrollbar
+        details_scrollbar = ttk.Scrollbar(details_frame, orient="vertical", command=details_tree.yview)
+        details_tree.configure(yscrollcommand=details_scrollbar.set)
+        
+        # Pack treeview and scrollbar
+        details_tree.pack(side="left", fill="both", expand=True)
+        details_scrollbar.pack(side="right", fill="y")
+        
+        # Populate details
+        for structure in structures_data:
+            # Determine status
+            if structure.pipe_length and structure.pipe_diameter and structure.pipe_type:
+                status = "Complete"
+                tag = "complete"
+            elif structure.pipe_type or structure.pipe_diameter or structure.pipe_length:
+                status = "Partial"
+                tag = "partial"
+            else:
+                status = "No Pipe Data"
+                tag = "incomplete"
+            
+            # Format values
+            pipe_type = structure.pipe_type or "—"
+            diameter = f"{int(structure.pipe_diameter)}\"" if structure.pipe_diameter else "—"
+            length = f"{structure.pipe_length:.2f}" if structure.pipe_length else "—"
+            upstream = structure.upstream_structure_id or "—"
+            
+            details_tree.insert(
+                "", "end",
+                values=(
+                    structure.structure_id,
+                    structure.structure_type,
+                    pipe_type,
+                    diameter,
+                    length,
+                    upstream,
+                    status
+                ),
+                tags=(tag,)
+            )
+        
+        # Action buttons frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        # Filter buttons
+        filter_frame = ttk.Frame(button_frame)
+        filter_frame.pack(side="left")
+        
+        def filter_complete():
+            # Clear and show only complete structures
+            for item in details_tree.get_children():
+                details_tree.delete(item)
+            
+            for structure in structures_with_pipe:
+                pipe_type = structure.pipe_type or "—"
+                diameter = f"{int(structure.pipe_diameter)}\"" if structure.pipe_diameter else "—"
+                length = f"{structure.pipe_length:.2f}" if structure.pipe_length else "—"
+                upstream = structure.upstream_structure_id or "—"
+                
+                details_tree.insert(
+                    "", "end",
+                    values=(
+                        structure.structure_id,
+                        structure.structure_type,
+                        pipe_type,
+                        diameter,
+                        length,
+                        upstream,
+                        "Complete"
+                    ),
+                    tags=("complete",)
+                )
+        
+        def filter_incomplete():
+            # Clear and show only incomplete structures
+            for item in details_tree.get_children():
+                details_tree.delete(item)
+            
+            incomplete_structures = [s for s in structures_data if not (s.pipe_length and s.pipe_diameter and s.pipe_type)]
+            
+            for structure in incomplete_structures:
+                # Determine status
+                if structure.pipe_type or structure.pipe_diameter or structure.pipe_length:
+                    status = "Partial"
+                    tag = "partial"
+                else:
+                    status = "No Pipe Data"
+                    tag = "incomplete"
+                
+                pipe_type = structure.pipe_type or "—"
+                diameter = f"{int(structure.pipe_diameter)}\"" if structure.pipe_diameter else "—"
+                length = f"{structure.pipe_length:.2f}" if structure.pipe_length else "—"
+                upstream = structure.upstream_structure_id or "—"
+                
+                details_tree.insert(
+                    "", "end",
+                    values=(
+                        structure.structure_id,
+                        structure.structure_type,
+                        pipe_type,
+                        diameter,
+                        length,
+                        upstream,
+                        status
+                    ),
+                    tags=(tag,)
+                )
+        
+        def show_all():
+            # Repopulate with all structures
+            for item in details_tree.get_children():
+                details_tree.delete(item)
+            
+            for structure in structures_data:
+                # Determine status
+                if structure.pipe_length and structure.pipe_diameter and structure.pipe_type:
+                    status = "Complete"
+                    tag = "complete"
+                elif structure.pipe_type or structure.pipe_diameter or structure.pipe_length:
+                    status = "Partial"
+                    tag = "partial"
+                else:
+                    status = "No Pipe Data"
+                    tag = "incomplete"
+                
+                pipe_type = structure.pipe_type or "—"
+                diameter = f"{int(structure.pipe_diameter)}\"" if structure.pipe_diameter else "—"
+                length = f"{structure.pipe_length:.2f}" if structure.pipe_length else "—"
+                upstream = structure.upstream_structure_id or "—"
+                
+                details_tree.insert(
+                    "", "end",
+                    values=(
+                        structure.structure_id,
+                        structure.structure_type,
+                        pipe_type,
+                        diameter,
+                        length,
+                        upstream,
+                        status
+                    ),
+                    tags=(tag,)
+                )
+        
+        ttk.Button(
+            filter_frame,
+            text="Show Complete",
+            bootstyle="success-outline",
+            command=filter_complete
+        ).pack(side="left", padx=2)
+        
+        ttk.Button(
+            filter_frame,
+            text="Show Incomplete",
+            bootstyle="warning-outline",
+            command=filter_incomplete
+        ).pack(side="left", padx=2)
+        
+        ttk.Button(
+            filter_frame,
+            text="Show All",
+            bootstyle="secondary-outline",
+            command=show_all
+        ).pack(side="left", padx=2)
+        
+        # Export and close buttons
+        action_frame = ttk.Frame(button_frame)
+        action_frame.pack(side="right")
+        
+        ttk.Button(
+            action_frame,
+            text="Export CSV",
+            bootstyle="info",
+            command=lambda: self.export_pipe_details_csv(structures_data)
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            action_frame,
+            text="Close",
+            bootstyle="secondary",
+            command=details_window.destroy
+        ).pack(side="left", padx=5)
+
+    def load_pipe_orders(self):
+        """Load pipe orders into the tracking tab"""
+        # Clear existing items
+        if hasattr(self, 'pipe_orders_tree'):
+            for item in self.pipe_orders_tree.get_children():
+                self.pipe_orders_tree.delete(item)
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Get pipe orders from database
+        try:
+            pipe_orders = self.db.get_pipe_orders(project.id)
+            
+            for order in pipe_orders:
+                # Format order date
+                order_date = order.get('order_date', '')
+                if order_date:
+                    try:
+                        order_date = datetime.fromisoformat(order_date).strftime("%m/%d/%Y")
+                    except:
+                        order_date = str(order_date)
+                
+                # Determine status tag
+                status = order.get('status', 'pending').lower()
+                tag = status if status in ['pending', 'ordered', 'in_transit', 'delivered'] else 'pending'
+                
+                self.pipe_orders_tree.insert(
+                    "", "end",
+                    values=(
+                        order.get('order_number', ''),
+                        order.get('pipe_type', ''),
+                        order.get('diameter', ''),
+                        f"{order.get('total_length', 0):.2f}",
+                        order.get('status', '').title(),
+                        order_date
+                    ),
+                    tags=(tag,)
+                )
+        
+        except Exception as e:
+            # If pipe orders table doesn't exist yet, show placeholder
+            self.logger.info(f"Pipe orders not available yet: {e}")
+            self.pipe_orders_tree.insert(
+                "", "end",
+                values=("No orders", "—", "—", "—", "No pipe orders found", "—"),
+                tags=("pending",)
+            )
 
     def quick_update_component_status(self, new_status):
         """Quickly update component status from context menu"""
@@ -2265,6 +3753,54 @@ class StructureManagementApp:
         ttk.Button(button_frame, text="Update Selected", bootstyle="primary", command=perform_bulk_update).pack(side="left", padx=5)
         ttk.Button(button_frame, text="Cancel", bootstyle="secondary", command=bulk_window.destroy).pack(side="right", padx=5)
 
+    def refresh_pipe_orders(self):
+        """Refresh the pipe orders list and recalculate totals"""
+        self.load_pipe_orders()
+        self.calculate_project_pipe_totals()
+
+    def show_pipe_breakdown_context_menu(self, event):
+        """Show right-click context menu for pipe breakdown items"""
+        # Get the item under the cursor
+        item = self.order_breakdown_tree.identify_row(event.y)
+        if not item:
+            return
+        
+        # Select the item
+        self.order_breakdown_tree.selection_set(item)
+        
+        # Get item details
+        values = self.order_breakdown_tree.item(item, "values")
+        if not values or values[0] == "Error" or values[0] == "No items":
+            return
+        
+        structure_id = values[0]
+        
+        # Create context menu
+        context_menu = tk.Menu(self.root, tearoff=0)
+        
+        context_menu.add_command(
+            label="Mark as Delivered",
+            command=self.mark_pipe_delivered
+        )
+        
+        context_menu.add_command(
+            label="Add Notes", 
+            command=self.add_pipe_notes
+        )
+        
+        context_menu.add_separator()
+        
+        context_menu.add_command(
+            label=f"View Structure {structure_id}",
+            command=self.view_structure_from_pipe_item
+        )
+        
+        # Show the menu
+        try:
+            context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            context_menu.grab_release()
+
     def load_structure_components(self, event):
         """Load components for the selected structure"""
         # Clear existing components
@@ -2509,6 +4045,1368 @@ class StructureManagementApp:
                         self.refresh_component_status()
                 else:
                     Messagebox.show_error("Failed to update component status", "Error")
+
+    def filter_pipe_orders(self, event=None):
+        """Filter pipe orders based on selected criteria"""
+        filter_value = self.pipe_filter_var.get()
+        
+        # Clear existing items
+        for item in self.pipe_orders_tree.get_children():
+            self.pipe_orders_tree.delete(item)
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Get all pipe orders
+        all_orders = self.db.get_pipe_orders(project.id)
+        
+        # Filter based on selected criteria
+        filtered_orders = []
+        
+        if filter_value == "All Orders":
+            filtered_orders = all_orders
+        elif filter_value == "Pending":
+            filtered_orders = [order for order in all_orders if order.get('status', '').lower() == 'pending']
+        elif filter_value == "Ordered":
+            filtered_orders = [order for order in all_orders if order.get('status', '').lower() == 'ordered']
+        elif filter_value == "In Transit":
+            filtered_orders = [order for order in all_orders if order.get('status', '').lower() == 'in_transit']
+        elif filter_value == "Delivered":
+            filtered_orders = [order for order in all_orders if order.get('status', '').lower() == 'delivered']
+        elif filter_value == "By Pipe Type":
+            # Group by pipe type - show unique pipe types
+            pipe_type_groups = {}
+            for order in all_orders:
+                pipe_types = order.get('pipe_types', '').split(',')
+                for pipe_type in pipe_types:
+                    pipe_type = pipe_type.strip()
+                    if pipe_type and pipe_type not in pipe_type_groups:
+                        pipe_type_groups[pipe_type] = []
+                    if pipe_type:
+                        pipe_type_groups[pipe_type].append(order)
+            
+            # Show grouped results
+            for pipe_type, orders in pipe_type_groups.items():
+                if pipe_type:
+                    # Add a separator for each pipe type
+                    self.pipe_orders_tree.insert(
+                        "", "end",
+                        values=(f"── {pipe_type} ──", "", "", "", f"{len(orders)} orders", ""),
+                        tags=("separator",)
+                    )
+                    filtered_orders.extend(orders)
+        
+        # Add filtered orders to treeview
+        for order in filtered_orders:
+            # Format order date
+            order_date = order.get('order_date', '')
+            if order_date:
+                try:
+                    if isinstance(order_date, str):
+                        order_date = datetime.fromisoformat(order_date).strftime("%m/%d/%Y")
+                    else:
+                        order_date = order_date.strftime("%m/%d/%Y")
+                except:
+                    order_date = str(order_date)
+            
+            # Determine status tag
+            status = order.get('status', 'pending').lower()
+            tag = status if status in ['pending', 'ordered', 'in_transit', 'delivered'] else 'pending'
+            
+            self.pipe_orders_tree.insert(
+                "", "end",
+                values=(
+                    order.get('order_number', ''),
+                    order.get('pipe_type', ''),
+                    order.get('diameter', ''),
+                    f"{order.get('total_length', 0):.2f}",
+                    order.get('status', '').title(),
+                    order_date
+                ),
+                tags=(tag,)
+            )
+
+    def on_pipe_order_selected(self, event):
+        """Handle pipe order selection to show details"""
+        selection = self.pipe_orders_tree.selection()
+        if not selection:
+            self.selected_order_label.config(text="None")
+            self.clear_order_breakdown()
+            return
+        
+        values = self.pipe_orders_tree.item(selection[0], "values")
+        order_number = values[0]
+        
+        # Skip separator rows
+        if "──" in order_number:
+            self.selected_order_label.config(text="None")
+            self.clear_order_breakdown()
+            return
+        
+        self.selected_order_label.config(text=order_number)
+        
+        # Load order breakdown
+        self.load_order_breakdown(order_number)
+
+    def load_order_breakdown(self, order_number):
+        """Load breakdown details for selected order"""
+        # Clear existing items
+        self.clear_order_breakdown()
+        
+        try:
+            # Get project ID
+            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            if not project:
+                return
+            
+            # Get all pipe orders to find the order ID
+            pipe_orders = self.db.get_pipe_orders(project.id)
+            order_id = None
+            
+            for order in pipe_orders:
+                if order.get('order_number') == order_number:
+                    order_id = order.get('id')
+                    break
+            
+            if not order_id:
+                self.order_breakdown_tree.insert(
+                    "", "end",
+                    values=("Error", "—", "—", "—", "—", "Order not found"),
+                    tags=("not_delivered",)
+                )
+                return
+            
+            # Get order items
+            order_items = self.db.get_pipe_order_items(order_id)
+            
+            if not order_items:
+                self.order_breakdown_tree.insert(
+                    "", "end",
+                    values=("No items", "—", "—", "—", "—", "No pipe items found for this order"),
+                    tags=("not_delivered",)
+                )
+                return
+            
+            # Add items to breakdown tree
+            for item in order_items:
+                # Determine delivery status
+                delivered_length = item.get('delivered_length', 0)
+                total_length = item.get('length', 0)
+                
+                if delivered_length >= total_length:
+                    delivered_text = "Yes"
+                    tag = "delivered"
+                elif delivered_length > 0:
+                    delivered_text = f"Partial ({delivered_length:.1f}ft)"
+                    tag = "partial"
+                else:
+                    delivered_text = "No"
+                    tag = "not_delivered"
+                
+                # Format diameter
+                diameter = item.get('diameter')
+                diameter_text = f"{int(diameter)}\"" if diameter else "Unknown"
+                
+                self.order_breakdown_tree.insert(
+                    "", "end",
+                    values=(
+                        item.get('structure_id', ''),
+                        item.get('pipe_type', ''),
+                        diameter_text,
+                        f"{total_length:.2f}",
+                        delivered_text,
+                        item.get('notes', '') or ""
+                    ),
+                    tags=(str(item.get('id', '')), tag)  # Store item ID as tag for context menu
+                )
+        
+        except Exception as e:
+            self.logger.error(f"Error loading order breakdown: {e}", exc_info=True)
+            self.order_breakdown_tree.insert(
+                "", "end",
+                values=("Error", "—", "—", "—", "—", f"Error loading breakdown: {str(e)}"),
+                tags=("not_delivered",)
+            )
+
+    def clear_order_breakdown(self):
+        """Clear the order breakdown view"""
+        if hasattr(self, 'order_breakdown_tree'):
+            for item in self.order_breakdown_tree.get_children():
+                self.order_breakdown_tree.delete(item)
+
+    def create_new_pipe_order(self):
+        """Create a new pipe order from scratch"""
+        # Create order dialog
+        order_window = ttk.Toplevel(self.root)
+        order_window.title("Create New Pipe Order")
+        order_window.geometry("500x400")
+        order_window.transient(self.root)
+        order_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(order_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Create New Pipe Order", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Order information form
+        form_frame = ttk.Frame(main_frame)
+        form_frame.pack(fill="x", pady=(0, 20))
+        form_frame.columnconfigure(1, weight=1)
+        
+        # Order number
+        ttk.Label(form_frame, text="Order Number:").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=8)
+        order_number_entry = ttk.Entry(form_frame)
+        order_number_entry.grid(row=0, column=1, sticky="ew", pady=8)
+        
+        # Generate default order number
+        from datetime import datetime
+        default_order_num = f"PO-{datetime.now().strftime('%Y%m%d')}-NEW"
+        order_number_entry.insert(0, default_order_num)
+        
+        # Supplier
+        ttk.Label(form_frame, text="Supplier:").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=8)
+        supplier_entry = ttk.Entry(form_frame)
+        supplier_entry.grid(row=1, column=1, sticky="ew", pady=8)
+        
+        # Expected delivery date
+        ttk.Label(form_frame, text="Expected Delivery:").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=8)
+        delivery_date_frame = ttk.Frame(form_frame)
+        delivery_date_frame.grid(row=2, column=1, sticky="ew", pady=8)
+        delivery_date_frame.columnconfigure(0, weight=1)
+        
+        delivery_date_entry = ttk.Entry(delivery_date_frame)
+        delivery_date_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        ttk.Button(
+            delivery_date_frame,
+            text="📅",
+            width=3,
+            command=lambda: self.open_date_picker(delivery_date_entry)
+        ).pack(side="right")
+        
+        # Notes
+        ttk.Label(form_frame, text="Notes:").grid(row=3, column=0, sticky="nw", padx=(0, 10), pady=8)
+        notes_text = tk.Text(form_frame, height=4, wrap="word")
+        notes_text.grid(row=3, column=1, sticky="ew", pady=8)
+        
+        # Instructions
+        instructions_frame = ttk.Labelframe(main_frame, text="Instructions", padding=10)
+        instructions_frame.pack(fill="x", pady=(0, 20))
+        
+        instructions_text = """1. Enter basic order information above
+    2. After creating the order, you can add pipe items by:
+    - Selecting structures in the Structures tab
+    - Right-clicking and choosing "Order Pipe"
+    - Or manually adding items in the Pipe Tracking tab"""
+        
+        ttk.Label(
+            instructions_frame,
+            text=instructions_text,
+            justify="left",
+            wraplength=450
+        ).pack(anchor="w")
+        
+        def create_order():
+            try:
+                order_number = order_number_entry.get().strip()
+                supplier = supplier_entry.get().strip()
+                delivery_date_str = delivery_date_entry.get().strip()
+                notes = notes_text.get("1.0", tk.END).strip()
+                
+                # Validation
+                if not order_number:
+                    Messagebox.show_error("Please enter an order number", "Validation Error")
+                    return
+                
+                # Parse delivery date
+                delivery_date = None
+                if delivery_date_str:
+                    try:
+                        delivery_date = datetime.strptime(delivery_date_str, "%m/%d/%Y")
+                    except ValueError:
+                        Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+                        return
+                
+                # Get project ID
+                project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+                if not project:
+                    Messagebox.show_error("Could not find current project", "Project Error")
+                    return
+                
+                # Create the pipe order in database (without pipe groups for manual order)
+                success = self.db.create_pipe_order(
+                    order_number=order_number,
+                    supplier=supplier,
+                    expected_delivery_date=delivery_date,
+                    notes=notes,
+                    pipe_groups=None,  # No initial pipe groups
+                    project_id=project.id
+                )
+                
+                if success:
+                    Messagebox.show_info(f"Pipe order '{order_number}' created successfully", "Success")
+                    order_window.destroy()
+                    # Refresh pipe orders
+                    self.refresh_pipe_orders()
+                else:
+                    Messagebox.show_error("Failed to create pipe order. Order number may already exist.", "Error")
+                    
+            except Exception as e:
+                self.logger.error(f"Error creating new pipe order: {e}", exc_info=True)
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+        
+        # Action buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(
+            button_frame,
+            text="Create Order",
+            bootstyle="primary",
+            command=create_order
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=order_window.destroy
+        ).pack(side="right", padx=5)
+
+    def update_pipe_order_status(self):
+        """Update the status of selected pipe order"""
+        selection = self.pipe_orders_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a pipe order first", "No Order Selected")
+            return
+        
+        values = self.pipe_orders_tree.item(selection[0], "values")
+        order_number = values[0]
+        
+        # Skip separator rows
+        if "──" in order_number:
+            Messagebox.show_warning("Please select a valid pipe order", "Invalid Selection")
+            return
+        
+        # Get order ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        pipe_orders = self.db.get_pipe_orders(project.id)
+        order_id = None
+        current_status = None
+        
+        for order in pipe_orders:
+            if order.get('order_number') == order_number:
+                order_id = order.get('id')
+                current_status = order.get('status', 'pending')
+                break
+        
+        if not order_id:
+            Messagebox.show_error("Order not found", "Error")
+            return
+        
+        # Create status update dialog
+        status_window = ttk.Toplevel(self.root)
+        status_window.title("Update Order Status")
+        status_window.geometry("450x350")
+        status_window.transient(self.root)
+        status_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(status_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        ttk.Label(
+            main_frame,
+            text=f"Update Status for Order: {order_number}",
+            font=("Helvetica", 14, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Current status display
+        current_frame = ttk.Frame(main_frame)
+        current_frame.pack(fill="x", pady=(0, 15))
+        
+        ttk.Label(current_frame, text="Current Status:", font=("Helvetica", 10, "bold")).pack(side="left")
+        ttk.Label(current_frame, text=current_status.title(), bootstyle="info").pack(side="left", padx=(10, 0))
+        
+        # Status selection
+        ttk.Label(main_frame, text="New Status:").pack(anchor="w", pady=(0, 5))
+        status_var = tk.StringVar(value=current_status)
+        status_combo = ttk.Combobox(
+            main_frame,
+            textvariable=status_var,
+            values=["pending", "ordered", "in_transit", "delivered"],
+            state="readonly"
+        )
+        status_combo.pack(fill="x", pady=(0, 15))
+        
+        # Delivery date
+        ttk.Label(main_frame, text="Delivery Date (if delivered):").pack(anchor="w", pady=(0, 5))
+        delivery_date_frame = ttk.Frame(main_frame)
+        delivery_date_frame.pack(fill="x", pady=(0, 15))
+        
+        delivery_date_entry = ttk.Entry(delivery_date_frame)
+        delivery_date_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        ttk.Button(
+            delivery_date_frame,
+            text="📅",
+            width=3,
+            command=lambda: self.open_date_picker(delivery_date_entry)
+        ).pack(side="right")
+        
+        # Auto-fill today's date if status is delivered
+        def on_status_change(*args):
+            if status_var.get() == "delivered" and not delivery_date_entry.get():
+                from datetime import datetime
+                delivery_date_entry.delete(0, tk.END)
+                delivery_date_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
+        
+        status_var.trace("w", on_status_change)
+        
+        # Notes
+        ttk.Label(main_frame, text="Notes:").pack(anchor="w", pady=(0, 5))
+        notes_text = tk.Text(main_frame, height=4, wrap="word")
+        notes_text.pack(fill="both", expand=True, pady=(0, 20))
+        
+        def save_status():
+            try:
+                new_status = status_var.get()
+                delivery_date_str = delivery_date_entry.get().strip()
+                notes = notes_text.get("1.0", tk.END).strip()
+                
+                # Parse delivery date
+                delivery_date = None
+                if delivery_date_str:
+                    try:
+                        delivery_date = datetime.strptime(delivery_date_str, "%m/%d/%Y")
+                    except ValueError:
+                        Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+                        return
+                
+                # Update order status
+                success = self.db.update_pipe_order_status(
+                    order_id=order_id,
+                    status=new_status,
+                    delivery_date=delivery_date,
+                    notes=notes if notes else None
+                )
+                
+                if success:
+                    Messagebox.show_info(f"Status updated to '{new_status.title()}'", "Success")
+                    status_window.destroy()
+                    self.refresh_pipe_orders()
+                    
+                    # Refresh breakdown if this order is selected
+                    if self.pipe_orders_tree.selection():
+                        current_order = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                        if current_order == order_number:
+                            self.load_order_breakdown(order_number)
+                else:
+                    Messagebox.show_error("Failed to update status", "Error")
+            
+            except Exception as e:
+                self.logger.error(f"Error updating pipe order status: {e}", exc_info=True)
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(
+            button_frame,
+            text="Save",
+            bootstyle="primary",
+            command=save_status
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=status_window.destroy
+        ).pack(side="right", padx=5)
+
+    def mark_pipe_delivered(self):
+        """Mark selected pipe as delivered"""
+        selection = self.order_breakdown_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a pipe item first", "No Item Selected")
+            return
+        
+        values = self.order_breakdown_tree.item(selection[0], "values")
+        structure_id = values[0]
+        pipe_type = values[1] 
+        total_length_str = values[3]
+        
+        # Get item ID from tags
+        tags = self.order_breakdown_tree.item(selection[0], "tags")
+        item_id = None
+        for tag in tags:
+            if tag.isdigit():
+                item_id = int(tag)
+                break
+        
+        if not item_id:
+            Messagebox.show_error("Could not identify pipe item", "Error")
+            return
+        
+        try:
+            total_length = float(total_length_str)
+        except ValueError:
+            Messagebox.show_error("Invalid length value", "Error")
+            return
+        
+        # Create delivery dialog
+        delivery_window = ttk.Toplevel(self.root)
+        delivery_window.title("Mark Pipe as Delivered")
+        delivery_window.geometry("400x300")
+        delivery_window.transient(self.root)
+        delivery_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(delivery_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame,
+            text="Mark Pipe as Delivered",
+            font=("Helvetica", 14, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Item info
+        info_frame = ttk.Labelframe(main_frame, text="Pipe Item", padding=10)
+        info_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(info_frame, text=f"Structure: {structure_id}", font=("Helvetica", 10, "bold")).pack(anchor="w")
+        ttk.Label(info_frame, text=f"Pipe Type: {pipe_type}").pack(anchor="w")
+        ttk.Label(info_frame, text=f"Ordered Length: {total_length} ft").pack(anchor="w")
+        
+        # Delivery details
+        details_frame = ttk.Frame(main_frame)
+        details_frame.pack(fill="x", pady=(0, 20))
+        details_frame.columnconfigure(1, weight=1)
+        
+        # Delivered length
+        ttk.Label(details_frame, text="Delivered Length (ft):").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+        delivered_length_entry = ttk.Entry(details_frame)
+        delivered_length_entry.grid(row=0, column=1, sticky="ew", pady=5)
+        delivered_length_entry.insert(0, str(total_length))  # Default to full length
+        
+        # Notes
+        ttk.Label(details_frame, text="Delivery Notes:").grid(row=1, column=0, sticky="nw", padx=(0, 10), pady=5)
+        notes_text = tk.Text(details_frame, height=3, wrap="word")
+        notes_text.grid(row=1, column=1, sticky="ew", pady=5)
+        
+        def save_delivery():
+            try:
+                delivered_length_str = delivered_length_entry.get().strip()
+                notes = notes_text.get("1.0", tk.END).strip()
+                
+                # Validation
+                if not delivered_length_str:
+                    Messagebox.show_error("Please enter delivered length", "Validation Error")
+                    return
+                
+                try:
+                    delivered_length = float(delivered_length_str)
+                except ValueError:
+                    Messagebox.show_error("Invalid length value", "Validation Error")
+                    return
+                
+                if delivered_length < 0:
+                    Messagebox.show_error("Delivered length cannot be negative", "Validation Error")
+                    return
+                
+                # Determine status based on delivered vs ordered length
+                if delivered_length >= total_length:
+                    status = "delivered"
+                elif delivered_length > 0:
+                    status = "partial"
+                else:
+                    status = "pending"
+                
+                # Update pipe item delivery
+                success = self.db.update_pipe_item_delivery(
+                    item_id=item_id,
+                    delivered_length=delivered_length,
+                    status=status,
+                    notes=notes if notes else None
+                )
+                
+                if success:
+                    Messagebox.show_info("Pipe delivery updated successfully", "Success")
+                    delivery_window.destroy()
+                    
+                    # Refresh breakdown view
+                    if self.pipe_orders_tree.selection():
+                        order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                        self.load_order_breakdown(order_number)
+                else:
+                    Messagebox.show_error("Failed to update delivery", "Error")
+            
+            except Exception as e:
+                self.logger.error(f"Error marking pipe as delivered: {e}", exc_info=True)
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(
+            button_frame,
+            text="Save",
+            bootstyle="primary",
+            command=save_delivery
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=delivery_window.destroy
+        ).pack(side="right", padx=5)
+
+    def add_pipe_notes(self):
+        """Add notes to selected pipe item"""
+        selection = self.order_breakdown_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a pipe item first", "No Item Selected")
+            return
+        
+        values = self.order_breakdown_tree.item(selection[0], "values")
+        structure_id = values[0]
+        pipe_type = values[1]
+        current_notes = values[5] if len(values) > 5 else ""
+        
+        # Get item ID from tags
+        tags = self.order_breakdown_tree.item(selection[0], "tags")
+        item_id = None
+        for tag in tags:
+            if tag.isdigit():
+                item_id = int(tag)
+                break
+        
+        if not item_id:
+            Messagebox.show_error("Could not identify pipe item", "Error")
+            return
+        
+        # Create notes dialog
+        notes_window = ttk.Toplevel(self.root)
+        notes_window.title("Add Pipe Notes")
+        notes_window.geometry("500x400")
+        notes_window.transient(self.root)
+        notes_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(notes_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame,
+            text="Add Notes to Pipe Item",
+            font=("Helvetica", 14, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Item info
+        info_frame = ttk.Labelframe(main_frame, text="Pipe Item", padding=10)
+        info_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(info_frame, text=f"Structure: {structure_id}", font=("Helvetica", 10, "bold")).pack(anchor="w")
+        ttk.Label(info_frame, text=f"Pipe Type: {pipe_type}").pack(anchor="w")
+        
+        # Notes section
+        notes_frame = ttk.Labelframe(main_frame, text="Notes", padding=10)
+        notes_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        # Notes text area
+        notes_text = tk.Text(notes_frame, wrap="word", font=("Helvetica", 11))
+        notes_scrollbar = ttk.Scrollbar(notes_frame, orient="vertical", command=notes_text.yview)
+        notes_text.configure(yscrollcommand=notes_scrollbar.set)
+        
+        notes_text.pack(side="left", fill="both", expand=True)
+        notes_scrollbar.pack(side="right", fill="y")
+        
+        # Pre-fill with existing notes
+        if current_notes:
+            notes_text.insert("1.0", current_notes)
+        
+        # Quick note buttons
+        quick_notes_frame = ttk.Frame(main_frame)
+        quick_notes_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(quick_notes_frame, text="Quick Notes:", font=("Helvetica", 10, "bold")).pack(anchor="w")
+        
+        quick_buttons_frame = ttk.Frame(quick_notes_frame)
+        quick_buttons_frame.pack(fill="x", pady=(5, 0))
+        
+        def add_quick_note(note_text):
+            current = notes_text.get("1.0", tk.END).strip()
+            if current:
+                notes_text.insert(tk.END, f"\n{note_text}")
+            else:
+                notes_text.insert("1.0", note_text)
+        
+        quick_notes = [
+            "Delivered on time",
+            "Delivered late",
+            "Partial delivery",
+            "Quality issue noted",
+            "Installed on site",
+            "Stored on site"
+        ]
+        
+        for i, note in enumerate(quick_notes):
+            if i % 3 == 0:  # Start new row every 3 buttons
+                row_frame = ttk.Frame(quick_buttons_frame)
+                row_frame.pack(fill="x", pady=2)
+            
+            ttk.Button(
+                row_frame,
+                text=note,
+                bootstyle="info-outline",
+                command=lambda n=note: add_quick_note(n)
+            ).pack(side="left", padx=2)
+        
+        def save_notes():
+            try:
+                notes = notes_text.get("1.0", tk.END).strip()
+                
+                # Update pipe item notes (using existing delivery info)
+                success = self.db.update_pipe_item_delivery(
+                    item_id=item_id,
+                    delivered_length=None,  # Don't change delivery status
+                    status=None,  # Don't change status
+                    notes=notes if notes else None
+                )
+                
+                if success:
+                    Messagebox.show_info("Notes updated successfully", "Success")
+                    notes_window.destroy()
+                    
+                    # Refresh breakdown view
+                    if self.pipe_orders_tree.selection():
+                        order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                        self.load_order_breakdown(order_number)
+                else:
+                    Messagebox.show_error("Failed to update notes", "Error")
+            
+            except Exception as e:
+                self.logger.error(f"Error adding pipe notes: {e}", exc_info=True)
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(
+            button_frame,
+            text="Save Notes",
+            bootstyle="primary",
+            command=save_notes
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=notes_window.destroy
+        ).pack(side="right", padx=5)
+
+    def generate_pipe_delivery_report(self):
+        """Generate a comprehensive pipe delivery report"""
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Get all pipe orders
+        pipe_orders = self.db.get_pipe_orders(project.id)
+        
+        if not pipe_orders:
+            Messagebox.show_info("No pipe orders found for this project", "No Data")
+            return
+        
+        # Create report window
+        report_window = ttk.Toplevel(self.root)
+        report_window.title(f"Pipe Delivery Report: {self.current_project}")
+        report_window.geometry("1000x700")
+        
+        # Main container
+        main_frame = ttk.Frame(report_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Report header
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(
+            header_frame, 
+            text=f"Pipe Delivery Report: {self.current_project}",
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(side="left")
+        
+        ttk.Label(
+            header_frame, 
+            text=f"Generated: {datetime.now().strftime('%m/%d/%Y %H:%M')}",
+            bootstyle="secondary"
+        ).pack(side="right")
+        
+        # Summary section
+        summary_frame = ttk.Labelframe(main_frame, text="Project Summary", padding=10)
+        summary_frame.pack(fill="x", pady=(0, 20))
+        
+        # Calculate overall statistics
+        total_orders = len(pipe_orders)
+        total_length = sum(order.get('total_length', 0) for order in pipe_orders)
+        
+        status_counts = {"pending": 0, "ordered": 0, "in_transit": 0, "delivered": 0}
+        for order in pipe_orders:
+            status = order.get('status', 'pending').lower()
+            if status in status_counts:
+                status_counts[status] += 1
+        
+        # Display summary
+        summary_text = f"Total Orders: {total_orders}  |  Total Pipe Length: {total_length:.2f} ft  |  "
+        summary_text += f"Pending: {status_counts['pending']}  |  Ordered: {status_counts['ordered']}  |  "
+        summary_text += f"In Transit: {status_counts['in_transit']}  |  Delivered: {status_counts['delivered']}"
+        
+        ttk.Label(summary_frame, text=summary_text, font=("Helvetica", 10)).pack()
+        
+        # Detailed report
+        detail_frame = ttk.Labelframe(main_frame, text="Detailed Order Status", padding=10)
+        detail_frame.pack(fill="both", expand=True)
+        
+        # Create treeview for detailed report
+        columns = ("ORDER", "SUPPLIER", "PIPE_TYPE", "DIAMETER", "LENGTH", "STATUS", "ORDER_DATE", "EXPECTED", "DELIVERED")
+        report_tree = ttk.Treeview(detail_frame, columns=columns, show="headings", height=15)
+        
+        # Configure columns
+        report_tree.heading("ORDER", text="Order #")
+        report_tree.heading("SUPPLIER", text="Supplier")
+        report_tree.heading("PIPE_TYPE", text="Pipe Type")
+        report_tree.heading("DIAMETER", text="Diameter")
+        report_tree.heading("LENGTH", text="Length (ft)")
+        report_tree.heading("STATUS", text="Status")
+        report_tree.heading("ORDER_DATE", text="Order Date")
+        report_tree.heading("EXPECTED", text="Expected")
+        report_tree.heading("DELIVERED", text="Delivered")
+        
+        report_tree.column("ORDER", width=100)
+        report_tree.column("SUPPLIER", width=120)
+        report_tree.column("PIPE_TYPE", width=120)
+        report_tree.column("DIAMETER", width=80)
+        report_tree.column("LENGTH", width=100)
+        report_tree.column("STATUS", width=80)
+        report_tree.column("ORDER_DATE", width=100)
+        report_tree.column("EXPECTED", width=100)
+        report_tree.column("DELIVERED", width=100)
+        
+        # Configure status tags
+        report_tree.tag_configure("pending", background="#fff3cd")
+        report_tree.tag_configure("ordered", background="#cce7ff")
+        report_tree.tag_configure("in_transit", background="#e2e3e5")
+        report_tree.tag_configure("delivered", background="#d4edda")
+        
+        # Add scrollbar
+        report_scrollbar = ttk.Scrollbar(detail_frame, orient="vertical", command=report_tree.yview)
+        report_tree.configure(yscrollcommand=report_scrollbar.set)
+        
+        # Populate report
+        for order in pipe_orders:
+            # Format dates
+            order_date = ""
+            if order.get('order_date'):
+                try:
+                    order_date = datetime.fromisoformat(order['order_date']).strftime("%m/%d/%Y")
+                except:
+                    order_date = str(order.get('order_date', ''))
+            
+            expected_date = ""
+            if order.get('expected_delivery_date'):
+                try:
+                    expected_date = datetime.fromisoformat(order['expected_delivery_date']).strftime("%m/%d/%Y")
+                except:
+                    expected_date = str(order.get('expected_delivery_date', ''))
+            
+            delivered_date = ""
+            if order.get('actual_delivery_date'):
+                try:
+                    delivered_date = datetime.fromisoformat(order['actual_delivery_date']).strftime("%m/%d/%Y")
+                except:
+                    delivered_date = str(order.get('actual_delivery_date', ''))
+            
+            status = order.get('status', 'pending').lower()
+            
+            report_tree.insert(
+                "", "end",
+                values=(
+                    order.get('order_number', ''),
+                    order.get('supplier', ''),
+                    order.get('pipe_type', ''),
+                    order.get('diameter', ''),
+                    f"{order.get('total_length', 0):.2f}",
+                    order.get('status', '').title(),
+                    order_date,
+                    expected_date,
+                    delivered_date or "—"
+                ),
+                tags=(status,)
+            )
+        
+        # Pack report tree and scrollbar
+        report_tree.pack(side="left", fill="both", expand=True)
+        report_scrollbar.pack(side="right", fill="y")
+        
+        # Export buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        def export_csv():
+            try:
+                import csv
+                from tkinter import filedialog
+                
+                # Ask user for save location
+                file_path = filedialog.asksaveasfilename(
+                    title="Save Pipe Delivery Report",
+                    defaultextension=".csv",
+                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                    initialvalue=f"pipe_delivery_report_{self.current_project}_{datetime.now().strftime('%Y%m%d')}.csv"
+                )
+                
+                if file_path:
+                    with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile)
+                        
+                        # Write header
+                        writer.writerow(["Order #", "Supplier", "Pipe Type", "Diameter", "Length (ft)", 
+                                    "Status", "Order Date", "Expected", "Delivered"])
+                        
+                        # Write data
+                        for order in pipe_orders:
+                            # Format dates for CSV
+                            order_date = ""
+                            if order.get('order_date'):
+                                try:
+                                    order_date = datetime.fromisoformat(order['order_date']).strftime("%m/%d/%Y")
+                                except:
+                                    order_date = str(order.get('order_date', ''))
+                            
+                            expected_date = ""
+                            if order.get('expected_delivery_date'):
+                                try:
+                                    expected_date = datetime.fromisoformat(order['expected_delivery_date']).strftime("%m/%d/%Y")
+                                except:
+                                    expected_date = str(order.get('expected_delivery_date', ''))
+                            
+                            delivered_date = ""
+                            if order.get('actual_delivery_date'):
+                                try:
+                                    delivered_date = datetime.fromisoformat(order['actual_delivery_date']).strftime("%m/%d/%Y")
+                                except:
+                                    delivered_date = str(order.get('actual_delivery_date', ''))
+                            
+                            writer.writerow([
+                                order.get('order_number', ''),
+                                order.get('supplier', ''),
+                                order.get('pipe_type', ''),
+                                order.get('diameter', ''),
+                                f"{order.get('total_length', 0):.2f}",
+                                order.get('status', '').title(),
+                                order_date,
+                                expected_date,
+                                delivered_date or "—"
+                            ])
+                    
+                    Messagebox.show_info(f"Report exported to {file_path}", "Export Successful")
+            
+            except Exception as e:
+                self.logger.error(f"Error exporting CSV: {e}", exc_info=True)
+                Messagebox.show_error(f"Failed to export CSV: {str(e)}", "Export Error")
+        
+        ttk.Button(
+            button_frame, 
+            text="Export to CSV", 
+            bootstyle="success",
+            command=export_csv
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame, 
+            text="Print Report", 
+            bootstyle="info",
+            command=lambda: Messagebox.show_info("Print functionality would open system print dialog", "Print")
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame, 
+            text="Close", 
+            bootstyle="secondary",
+            command=report_window.destroy
+        ).pack(side="right", padx=5)
+
+
+    def view_structure_from_pipe_item(self):
+        """View structure details from pipe breakdown item"""
+        selection = self.order_breakdown_tree.selection()
+        if not selection:
+            return
+        
+        structure_id = self.order_breakdown_tree.item(selection[0], "values")[0]
+        
+        # Switch to Structures tab and select the structure
+        self.notebook.select(0)  # Select first tab (Structures)
+        
+        # Find and select the structure in the tree
+        for item in self.structure_tree.get_children():
+            if self.structure_tree.item(item, "values")[0] == structure_id:
+                self.structure_tree.selection_set(item)
+                self.structure_tree.see(item)
+                self.show_structure_details(None)
+                break
+        
+        Messagebox.show_info(f"Switched to Structures tab and selected {structure_id}", "Navigation")
+
+    def export_pipe_totals_csv(self, pipe_totals):
+        """Export pipe totals to CSV"""
+        try:
+            import csv
+            from tkinter import filedialog
+            
+            # Ask user for save location
+            file_path = filedialog.asksaveasfilename(
+                title="Save Pipe Totals",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialvalue=f"pipe_totals_{self.current_project}_{datetime.now().strftime('%Y%m%d')}.csv"
+            )
+            
+            if file_path:
+                with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Write header
+                    writer.writerow(["Pipe Type", "Diameter", "Total Length (ft)", "Structure Count", "Structures"])
+                    
+                    # Write data
+                    for key, data in pipe_totals.items():
+                        diameter_text = f"{int(data['diameter'])}\"" if data['diameter'] else "Unknown"
+                        structure_list = ", ".join([s['id'] for s in data['structures']])
+                        
+                        writer.writerow([
+                            data['pipe_type'],
+                            diameter_text,
+                            f"{data['total_length']:.2f}",
+                            len(data['structures']),
+                            structure_list
+                        ])
+                
+                Messagebox.show_info(f"Pipe totals exported to {file_path}", "Export Successful")
+        
+        except Exception as e:
+            self.logger.error(f"Error exporting pipe totals CSV: {e}", exc_info=True)
+            Messagebox.show_error(f"Failed to export CSV: {str(e)}", "Export Error")
+
+    def export_pipe_details_csv(self, structures_data):
+        """Export pipe details to CSV"""
+        try:
+            import csv
+            from tkinter import filedialog
+            
+            # Ask user for save location
+            file_path = filedialog.asksaveasfilename(
+                title="Save Pipe Details",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialvalue=f"pipe_details_{self.current_project}_{datetime.now().strftime('%Y%m%d')}.csv"
+            )
+            
+            if file_path:
+                with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Write header
+                    writer.writerow(["Structure ID", "Type", "Pipe Type", "Diameter", "Length (ft)", "Upstream", "Status"])
+                    
+                    # Write data
+                    for structure in structures_data:
+                        # Determine status
+                        if structure.pipe_length and structure.pipe_diameter and structure.pipe_type:
+                            status = "Complete"
+                        elif structure.pipe_type or structure.pipe_diameter or structure.pipe_length:
+                            status = "Partial"
+                        else:
+                            status = "No Pipe Data"
+                        
+                        # Format values
+                        pipe_type = structure.pipe_type or "—"
+                        diameter = f"{int(structure.pipe_diameter)}\"" if structure.pipe_diameter else "—"
+                        length = f"{structure.pipe_length:.2f}" if structure.pipe_length else "—"
+                        upstream = structure.upstream_structure_id or "—"
+                        
+                        writer.writerow([
+                            structure.structure_id,
+                            structure.structure_type,
+                            pipe_type,
+                            diameter,
+                            length,
+                            upstream,
+                            status
+                        ])
+                
+                Messagebox.show_info(f"Pipe details exported to {file_path}", "Export Successful")
+        
+        except Exception as e:
+            self.logger.error(f"Error exporting pipe details CSV: {e}", exc_info=True)
+            Messagebox.show_error(f"Failed to export CSV: {str(e)}", "Export Error")
+
+    def create_pipe_order_from_totals(self, pipe_totals, parent_window):
+        """Create a pipe order from calculated totals"""
+        parent_window.destroy()
+        
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Convert pipe_totals format to pipe_groups format expected by order creation
+        pipe_groups = {}
+        
+        for key, data in pipe_totals.items():
+            pipe_groups[key] = {
+                'pipe_type': data['pipe_type'],
+                'diameter': data['diameter'],
+                'total_length': data['total_length'],
+                'structures': data['structures']  # These should be Structure objects
+            }
+        
+        # Create order dialog
+        order_window = ttk.Toplevel(self.root)
+        order_window.title("Create Order from Totals")
+        order_window.geometry("600x500")
+        order_window.transient(self.root)
+        order_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(order_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Create Pipe Order from Totals", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Order information section
+        order_info_frame = ttk.Labelframe(main_frame, text="Order Information", padding=10)
+        order_info_frame.pack(fill="x", pady=(0, 20))
+        
+        # Order details form
+        form_frame = ttk.Frame(order_info_frame)
+        form_frame.pack(fill="x")
+        form_frame.columnconfigure(1, weight=1)
+        
+        # Order number
+        ttk.Label(form_frame, text="Order Number:").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+        order_number_entry = ttk.Entry(form_frame)
+        order_number_entry.grid(row=0, column=1, sticky="ew", pady=5)
+        
+        # Generate default order number
+        total_structures = sum(len(data['structures']) for data in pipe_totals.values())
+        default_order_num = f"PO-{datetime.now().strftime('%Y%m%d')}-{total_structures:03d}"
+        order_number_entry.insert(0, default_order_num)
+        
+        # Supplier
+        ttk.Label(form_frame, text="Supplier:").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=5)
+        supplier_entry = ttk.Entry(form_frame)
+        supplier_entry.grid(row=1, column=1, sticky="ew", pady=5)
+        
+        # Expected delivery date
+        ttk.Label(form_frame, text="Expected Delivery:").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=5)
+        delivery_date_frame = ttk.Frame(form_frame)
+        delivery_date_frame.grid(row=2, column=1, sticky="ew", pady=5)
+        delivery_date_frame.columnconfigure(0, weight=1)
+        
+        delivery_date_entry = ttk.Entry(delivery_date_frame)
+        delivery_date_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        ttk.Button(
+            delivery_date_frame,
+            text="📅",
+            width=3,
+            command=lambda: self.open_date_picker(delivery_date_entry)
+        ).pack(side="right")
+        
+        # Notes
+        ttk.Label(form_frame, text="Notes:").grid(row=3, column=0, sticky="nw", padx=(0, 10), pady=5)
+        notes_text = tk.Text(form_frame, height=3, wrap="word")
+        notes_text.grid(row=3, column=1, sticky="ew", pady=5)
+        
+        # Totals summary
+        summary_frame = ttk.Labelframe(main_frame, text="Order Summary", padding=10)
+        summary_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        total_length = sum(data['total_length'] for data in pipe_totals.values())
+        total_structures = sum(len(data['structures']) for data in pipe_totals.values())
+        
+        summary_text = f"Total Length: {total_length:.2f} feet\n"
+        summary_text += f"Total Structures: {total_structures}\n"
+        summary_text += f"Pipe Types: {len(pipe_totals)}\n\n"
+        
+        for key, data in pipe_totals.items():
+            diameter_text = f"{int(data['diameter'])}\"" if data['diameter'] else "Unknown"
+            summary_text += f"• {data['pipe_type']} {diameter_text}: {data['total_length']:.2f} ft ({len(data['structures'])} structures)\n"
+        
+        ttk.Label(summary_frame, text=summary_text, justify="left").pack(anchor="w")
+        
+        def create_order():
+            try:
+                order_number = order_number_entry.get().strip()
+                supplier = supplier_entry.get().strip()
+                delivery_date_str = delivery_date_entry.get().strip()
+                notes = notes_text.get("1.0", tk.END).strip()
+                
+                # Validation
+                if not order_number:
+                    Messagebox.show_error("Please enter an order number", "Validation Error")
+                    return
+                
+                # Parse delivery date
+                delivery_date = None
+                if delivery_date_str:
+                    try:
+                        delivery_date = datetime.strptime(delivery_date_str, "%m/%d/%Y")
+                    except ValueError:
+                        Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+                        return
+                
+                # Create the pipe order in database
+                success = self.db.create_pipe_order(
+                    order_number=order_number,
+                    supplier=supplier,
+                    expected_delivery_date=delivery_date,
+                    notes=notes,
+                    pipe_groups=pipe_groups,
+                    project_id=project.id
+                )
+                
+                if success:
+                    Messagebox.show_info(f"Pipe order '{order_number}' created successfully", "Success")
+                    order_window.destroy()
+                    # Refresh pipe orders if we're on that tab
+                    if hasattr(self, 'pipe_orders_tree'):
+                        self.refresh_pipe_orders()
+                else:
+                    Messagebox.show_error("Failed to create pipe order", "Error")
+                    
+            except Exception as e:
+                self.logger.error(f"Error creating pipe order from totals: {e}", exc_info=True)
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+        
+        # Action buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(
+            button_frame,
+            text="Create Order",
+            bootstyle="primary",
+            command=create_order
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=order_window.destroy
+        ).pack(side="right", padx=5)
+
+    def export_pipe_totals_csv(self, pipe_totals):
+        """Export pipe totals to CSV"""
+        try:
+            import csv
+            from tkinter import filedialog
+            from datetime import datetime
+            
+            # Ask user for save location
+            file_path = filedialog.asksaveasfilename(
+                title="Save Pipe Totals",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialvalue=f"pipe_totals_{self.current_project}_{datetime.now().strftime('%Y%m%d')}.csv"
+            )
+            
+            if file_path:
+                with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Write header with project info
+                    writer.writerow([f"Pipe Totals Report - Project: {self.current_project}"])
+                    writer.writerow([f"Generated: {datetime.now().strftime('%m/%d/%Y %H:%M')}"])
+                    writer.writerow([])  # Empty row
+                    
+                    # Write data header
+                    writer.writerow(["Pipe Type", "Diameter", "Total Length (ft)", "Structure Count", "Structures"])
+                    
+                    # Calculate grand totals
+                    grand_total_length = 0
+                    grand_total_structures = 0
+                    
+                    # Write data
+                    for key, data in pipe_totals.items():
+                        diameter_text = f"{int(data['diameter'])}\"" if data['diameter'] else "Unknown"
+                        structure_list = ", ".join([s['id'] for s in data['structures']])
+                        total_length = data['total_length']
+                        structure_count = len(data['structures'])
+                        
+                        grand_total_length += total_length
+                        grand_total_structures += structure_count
+                        
+                        writer.writerow([
+                            data['pipe_type'],
+                            diameter_text,
+                            f"{total_length:.2f}",
+                            structure_count,
+                            structure_list
+                        ])
+                    
+                    # Write totals
+                    writer.writerow([])  # Empty row
+                    writer.writerow(["TOTALS", "", f"{grand_total_length:.2f}", grand_total_structures, ""])
+                    
+                    # Write summary statistics
+                    writer.writerow([])  # Empty row
+                    writer.writerow(["Summary Statistics"])
+                    writer.writerow(["Total Pipe Types:", len(pipe_totals)])
+                    writer.writerow(["Total Length (ft):", f"{grand_total_length:.2f}"])
+                    writer.writerow(["Total Structures:", grand_total_structures])
+                    writer.writerow(["Average Length per Structure:", f"{grand_total_length/grand_total_structures:.2f}" if grand_total_structures > 0 else "0"])
+                
+                Messagebox.show_info(f"Pipe totals exported to {file_path}", "Export Successful")
+        
+        except Exception as e:
+            self.logger.error(f"Error exporting pipe totals CSV: {e}", exc_info=True)
+            Messagebox.show_error(f"Failed to export CSV: {str(e)}", "Export Error")
 
     def update_structure_status(self, event=None):
         """Update the overall structure status (placeholder for future enhancement)"""
