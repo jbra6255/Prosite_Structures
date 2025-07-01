@@ -727,14 +727,16 @@ class StructureManagementApp:
         settings_menu.add_command(label="User Preferences", command=self.show_preferences)
         settings_menu.add_command(label="Project Settings", command=self.show_project_settings)
         
-        # Help menu
+        # Help menu - FIXED: Complete the label definition
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Documentation", command=self.show_documentation)
-        help_menu.add_command(label="About", command=self.show_about)
+        help_menu.add_command(label="About", command=self.show_about)  # Fixed incomplete label
+        help_menu.add_separator()
+        help_menu.add_command(label="Keyboard Shortcuts", command=self.show_shortcuts)
 
     def setup_components_tab(self):
-        """Set up the enhanced component tracking tab - FIXED ALIGNMENT AND DATE PICKER"""
+        """Set up the enhanced component tracking tab"""
         print("Debug: Setting up components tab")
 
         # Configure components frame for proper expansion
@@ -1211,7 +1213,7 @@ class StructureManagementApp:
             left_buttons,
             text="Add Notes",
             bootstyle="info-outline",
-            command=self.add_pipe_notes
+            command=self.add_pipe_notes_enhanced
         ).pack(side="left", padx=2)
         
         # Right side buttons
@@ -1227,13 +1229,11 @@ class StructureManagementApp:
         
         # Bind events
         self.pipe_orders_tree.bind('<<TreeviewSelect>>', self.on_pipe_order_selected)
-        self.order_breakdown_tree.bind('<Button-3>', self.show_pipe_breakdown_context_menu)
+        self.order_breakdown_tree.bind('<Button-3>', self.show_pipe_breakdown_context_menu_enhanced)
         
         # Load initial data
         self.load_pipe_orders()
         self.calculate_project_pipe_totals()  # Calculate totals on startup
-
-        self.add_pipe_order_context_menu()
         
         print("DEBUG: Pipe tracking tab initialization finished")
 
@@ -1565,84 +1565,898 @@ class StructureManagementApp:
             command=confirm_window.destroy
         ).pack(side="right", padx=5)
 
-    def add_pipe_order_context_menu(self):
-        """Add right-click context menu to pipe orders tree"""
-        def show_order_context_menu(event):
-            # Get the item under the cursor
-            item = self.pipe_orders_tree.identify_row(event.y)
-            if not item:
-                return
-            
-            # Select the item
-            self.pipe_orders_tree.selection_set(item)
-            
-            # Get order details
-            values = self.pipe_orders_tree.item(item, "values")
-            if not values or "──" in values[0]:  # Skip separator rows
-                return
-            
-            order_number = values[0]
-            order_status = values[4].lower()
-            
-            # Create context menu
-            context_menu = tk.Menu(self.root, tearoff=0)
-            
-            context_menu.add_command(
-                label="View Details",
-                command=lambda: self.on_pipe_order_selected(None)
-            )
-            
-            context_menu.add_separator()
-            
-            context_menu.add_command(
-                label="Update Status",
-                command=self.update_pipe_order_status
-            )
-            
-            context_menu.add_separator()
-            
-            # Different options based on status
-            if order_status in ['pending', 'ordered']:
-                context_menu.add_command(
-                    label="Edit Order",
-                    command=lambda: self.edit_pipe_order(order_number)
+    def show_pipe_order_context_menu(self, event):
+        """Show enhanced right-click context menu for pipe orders with status management"""
+        # Get the item under the cursor
+        item = self.pipe_orders_tree.identify_row(event.y)
+        if not item:
+            return
+        
+        # Select the item
+        self.pipe_orders_tree.selection_set(item)
+        
+        # Get order details
+        values = self.pipe_orders_tree.item(item, "values")
+        if not values or "──" in values[0]:  # Skip separator rows
+            return
+        
+        order_number = values[0]
+        order_status = values[4].lower()
+        
+        # Create context menu
+        context_menu = tk.Menu(self.root, tearoff=0)
+        
+        context_menu.add_command(
+            label="View Details",
+            command=lambda: self.on_pipe_order_selected(None)
+        )
+        
+        context_menu.add_separator()
+        
+        # Quick status updates submenu
+        status_menu = tk.Menu(context_menu, tearoff=0)
+        context_menu.add_cascade(label="Quick Status Update", menu=status_menu)
+        
+        statuses = ["pending", "ordered", "delivered"]
+        for status in statuses:
+            if status != order_status:
+                status_menu.add_command(
+                    label=status.title(),
+                    command=lambda s=status: self.quick_update_pipe_order_status(s)
                 )
-            
+        
+        context_menu.add_separator()
+        
+        context_menu.add_command(
+            label="Edit Order Details",
+            command=self.show_pipe_order_edit_dialog
+        )
+        
+        context_menu.add_command(
+            label="Mark as Delivered",
+            command=self.quick_mark_pipe_order_delivered
+        )
+        
+        context_menu.add_separator()
+        
+        # Different options based on status
+        if order_status in ['pending', 'ordered']:
             context_menu.add_command(
                 label="Duplicate Order",
                 command=lambda: self.duplicate_pipe_order(order_number)
             )
-            
-            context_menu.add_separator()
-            
-            # Delete option with warning color for delivered orders
-            if order_status in ['delivered', 'in_transit']:
-                context_menu.add_command(
-                    label="⚠️ Delete Order (Delivered)",
-                    command=self.delete_pipe_order
-                )
-            else:
-                context_menu.add_command(
-                    label="Delete Order",
-                    command=self.delete_pipe_order
-                )
-            
-            # Show the menu
-            try:
-                context_menu.tk_popup(event.x_root, event.y_root)
-            finally:
-                context_menu.grab_release()
         
-        # Bind the context menu to the pipe orders tree
-        self.pipe_orders_tree.bind('<Button-3>', show_order_context_menu)
+        context_menu.add_separator()
+        
+        # Delete option with warning color for delivered orders
+        if order_status in ['delivered']:
+            context_menu.add_command(
+                label="⚠️ Delete Order (Delivered)",
+                command=self.delete_pipe_order
+            )
+        else:
+            context_menu.add_command(
+                label="Delete Order",
+                command=self.delete_pipe_order
+            )
+        
+        # Show the menu
+        try:
+            context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            context_menu.grab_release()
 
-    def edit_pipe_order(self, order_number: str):
-        """Edit an existing pipe order (placeholder for future implementation)"""
-        Messagebox.show_info(f"Edit functionality for order '{order_number}' coming soon", "Feature Coming Soon")
+    def quick_update_pipe_order_status(self, new_status):
+        """Quickly update pipe order status from context menu"""
+        selection = self.pipe_orders_tree.selection()
+        if not selection:
+            return
+        
+        values = self.pipe_orders_tree.item(selection[0], "values")
+        order_number = values[0]
+        
+        # Skip separator rows
+        if "──" in order_number:
+            Messagebox.show_warning("Please select a valid pipe order", "Invalid Selection")
+            return
+        
+        # Get order ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        pipe_orders = self.db.get_pipe_orders(project.id)
+        order_id = None
+        
+        for order in pipe_orders:
+            if order.get('order_number') == order_number:
+                order_id = order.get('id')
+                break
+        
+        if not order_id:
+            Messagebox.show_error("Order not found", "Error")
+            return
+        
+        # Set delivery date if changing to delivered
+        delivery_date = None
+        if new_status == "delivered":
+            delivery_date = datetime.now()
+        
+        # Update status
+        success = self.db.update_pipe_order_status(
+            order_id=order_id,
+            status=new_status,
+            delivery_date=delivery_date,
+            notes=None
+        )
+        
+        if success:
+            # Refresh views
+            self.refresh_pipe_orders()
+            
+            # Refresh breakdown if this order is selected
+            if self.pipe_orders_tree.selection():
+                current_order = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                if current_order == order_number:
+                    self.load_order_breakdown(order_number)
+            
+            # Show brief success message
+            self.show_status_toast(f"Order status updated to '{new_status.title()}'")
+        else:
+            Messagebox.show_error("Failed to update order status", "Error")
 
-    def duplicate_pipe_order(self, order_number: str):
-        """Duplicate an existing pipe order (placeholder for future implementation)"""
-        Messagebox.show_info(f"Duplicate functionality for order '{order_number}' coming soon", "Feature Coming Soon")
+    def quick_mark_pipe_order_delivered(self):
+        """Quickly mark entire pipe order as delivered with today's date"""
+        selection = self.pipe_orders_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a pipe order first", "No Order Selected")
+            return
+        
+        values = self.pipe_orders_tree.item(selection[0], "values")
+        order_number = values[0]
+        
+        # Skip separator rows
+        if "──" in order_number:
+            Messagebox.show_warning("Please select a valid pipe order", "Invalid Selection")
+            return
+        
+        # Get order ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        pipe_orders = self.db.get_pipe_orders(project.id)
+        order_id = None
+        
+        for order in pipe_orders:
+            if order.get('order_number') == order_number:
+                order_id = order.get('id')
+                break
+        
+        if not order_id:
+            Messagebox.show_error("Order not found", "Error")
+            return
+        
+        # Confirm action
+        confirm = Messagebox.yesno(
+            f"Mark order '{order_number}' as delivered with today's date?\n\nThis will also mark all pipe items in this order as delivered.",
+            "Confirm Delivery"
+        )
+        
+        if not confirm:
+            return
+        
+        try:
+            delivery_date = datetime.now()
+            
+            # Update order status
+            order_success = self.db.update_pipe_order_status(
+                order_id=order_id,
+                status="delivered",
+                delivery_date=delivery_date,
+                notes=f"Marked as delivered on {delivery_date.strftime('%m/%d/%Y')}"
+            )
+            
+            if order_success:
+                # Also mark all items in the order as delivered
+                order_items = self.db.get_pipe_order_items(order_id)
+                items_updated = 0
+                
+                for item in order_items:
+                    item_success = self.db.update_pipe_item_delivery(
+                        item_id=item['id'],
+                        delivered_length=item['length'],  # Mark full length as delivered
+                        status="delivered",
+                        notes=f"Auto-delivered with order on {delivery_date.strftime('%m/%d/%Y')}"
+                    )
+                    if item_success:
+                        items_updated += 1
+                
+                # Show success message
+                Messagebox.show_info(
+                    f"Order '{order_number}' marked as delivered!\n\nOrder status updated and {items_updated} pipe items marked as delivered.",
+                    "Delivery Complete"
+                )
+                
+                # Refresh views
+                self.refresh_pipe_orders()
+                self.calculate_project_pipe_totals()
+                
+                # Refresh breakdown if this order is selected
+                if self.pipe_orders_tree.selection():
+                    current_order = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                    if current_order == order_number:
+                        self.load_order_breakdown(order_number)
+            else:
+                Messagebox.show_error("Failed to mark order as delivered", "Error")
+                
+        except Exception as e:
+            self.logger.error(f"Error marking order as delivered: {e}", exc_info=True)
+            Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+
+    def show_pipe_order_edit_dialog(self):
+        """Show enhanced edit dialog for pipe order with delivery date tracking"""
+        selection = self.pipe_orders_tree.selection()
+        if not selection:
+            Messagebox.show_warning("Please select a pipe order first", "No Order Selected")
+            return
+        
+        values = self.pipe_orders_tree.item(selection[0], "values")
+        order_number = values[0]
+        current_status = values[4].lower()
+        
+        # Skip separator rows
+        if "──" in order_number:
+            Messagebox.show_warning("Please select a valid pipe order", "Invalid Selection")
+            return
+        
+        # Get order details
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        pipe_orders = self.db.get_pipe_orders(project.id)
+        order_id = None
+        order_data = None
+        
+        for order in pipe_orders:
+            if order.get('order_number') == order_number:
+                order_id = order.get('id')
+                order_data = order
+                break
+        
+        if not order_id:
+            Messagebox.show_error("Order not found", "Error")
+            return
+        
+        # Create edit dialog
+        edit_window = ttk.Toplevel(self.root)
+        edit_window.title("Edit Pipe Order")
+        edit_window.geometry("520x650")
+        edit_window.transient(self.root)
+        edit_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(edit_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Edit Pipe Order", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Order info
+        info_frame = ttk.Labelframe(main_frame, text="Order Information", padding=10)
+        info_frame.pack(fill="x", pady=(0, 20))
+        
+        ttk.Label(info_frame, text=f"Order Number: {order_number}", font=("Helvetica", 12, "bold")).pack(anchor="w")
+        ttk.Label(info_frame, text=f"Current Status: {current_status.title()}", font=("Helvetica", 10)).pack(anchor="w")
+        
+        # Status update section
+        status_frame = ttk.Labelframe(main_frame, text="Update Status", padding=10)
+        status_frame.pack(fill="x", pady=(0, 15))
+        
+        ttk.Label(status_frame, text="New Status:").pack(anchor="w", pady=(0, 5))
+        
+        status_var = tk.StringVar(value=current_status)
+        status_options = ["pending", "ordered", "delivered"]
+        status_combo = ttk.Combobox(status_frame, textvariable=status_var, values=status_options, state="readonly")
+        status_combo.pack(fill="x", pady=(0, 10))
+        
+        # Date fields with calendar buttons
+        date_frame = ttk.Frame(status_frame)
+        date_frame.pack(fill="x", pady=(10, 0))
+        
+        # Order date
+        order_frame = ttk.Frame(date_frame)
+        ttk.Label(order_frame, text="Order Date:").pack(anchor="w")
+        order_date_frame = ttk.Frame(order_frame)
+        order_date_frame.pack(fill="x", pady=(2, 10))
+        order_entry = ttk.Entry(order_date_frame)
+        order_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        order_cal_btn = ttk.Button(order_date_frame, text="📅", width=3,
+                                command=lambda: self.open_date_picker(order_entry))
+        order_cal_btn.pack(side="right")
+        
+        # Pre-fill order date
+        if order_data.get('order_date'):
+            try:
+                order_date_obj = datetime.fromisoformat(order_data['order_date'])
+                order_entry.insert(0, order_date_obj.strftime("%m/%d/%Y"))
+            except:
+                pass
+        
+        # Expected delivery date
+        expected_frame = ttk.Frame(date_frame)
+        ttk.Label(expected_frame, text="Expected Delivery:").pack(anchor="w")
+        expected_date_frame = ttk.Frame(expected_frame)
+        expected_date_frame.pack(fill="x", pady=(2, 10))
+        expected_entry = ttk.Entry(expected_date_frame)
+        expected_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        expected_cal_btn = ttk.Button(expected_date_frame, text="📅", width=3,
+                                    command=lambda: self.open_date_picker(expected_entry))
+        expected_cal_btn.pack(side="right")
+        
+        # Pre-fill expected date
+        if order_data.get('expected_delivery_date'):
+            try:
+                expected_date_obj = datetime.fromisoformat(order_data['expected_delivery_date'])
+                expected_entry.insert(0, expected_date_obj.strftime("%m/%d/%Y"))
+            except:
+                pass
+        
+        # Actual delivery date
+        delivery_frame = ttk.Frame(date_frame)
+        ttk.Label(delivery_frame, text="Actual Delivery:").pack(anchor="w")
+        actual_date_frame = ttk.Frame(delivery_frame)
+        actual_date_frame.pack(fill="x", pady=(2, 10))
+        actual_entry = ttk.Entry(actual_date_frame)
+        actual_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        actual_cal_btn = ttk.Button(actual_date_frame, text="📅", width=3,
+                                command=lambda: self.open_date_picker(actual_entry))
+        actual_cal_btn.pack(side="right")
+        
+        # Pre-fill actual delivery date
+        if order_data.get('actual_delivery_date'):
+            try:
+                actual_date_obj = datetime.fromisoformat(order_data['actual_delivery_date'])
+                actual_entry.insert(0, actual_date_obj.strftime("%m/%d/%Y"))
+            except:
+                pass
+        
+        # Show/hide date fields based on status
+        def update_date_visibility(*args):
+            # Clear all frames first
+            order_frame.pack_forget()
+            expected_frame.pack_forget()
+            delivery_frame.pack_forget()
+            
+            status = status_var.get()
+            if status in ["ordered", "delivered"]:
+                order_frame.pack(fill="x")
+                expected_frame.pack(fill="x")
+            
+            if status == "delivered":
+                delivery_frame.pack(fill="x")
+                if not actual_entry.get():
+                    actual_entry.delete(0, tk.END)
+                    actual_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
+        
+        status_var.trace("w", update_date_visibility)
+        update_date_visibility()  # Initial setup
+        
+        # Supplier section
+        supplier_frame = ttk.Labelframe(main_frame, text="Supplier Information", padding=10)
+        supplier_frame.pack(fill="x", pady=(0, 15))
+        
+        ttk.Label(supplier_frame, text="Supplier:").pack(anchor="w", pady=(0, 5))
+        supplier_entry = ttk.Entry(supplier_frame)
+        supplier_entry.pack(fill="x", pady=(0, 10))
+        
+        # Pre-fill supplier
+        if order_data.get('supplier'):
+            supplier_entry.insert(0, order_data['supplier'])
+        
+        # Notes section
+        notes_frame = ttk.Labelframe(main_frame, text="Notes", padding=10)
+        notes_frame.pack(fill="both", expand=True, pady=(0, 15))
+        
+        notes_text = tk.Text(notes_frame, height=4, wrap="word")
+        notes_text.pack(fill="both", expand=True)
+        
+        # Pre-fill notes
+        if order_data.get('notes'):
+            notes_text.insert("1.0", order_data['notes'])
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        def save_changes():
+            try:
+                # Parse dates
+                order_date = None
+                expected_date = None
+                actual_date = None
+                
+                if order_entry.get().strip():
+                    order_date = datetime.strptime(order_entry.get().strip(), "%m/%d/%Y")
+                
+                if expected_entry.get().strip():
+                    expected_date = datetime.strptime(expected_entry.get().strip(), "%m/%d/%Y")
+                
+                if actual_entry.get().strip():
+                    actual_date = datetime.strptime(actual_entry.get().strip(), "%m/%d/%Y")
+                
+                # Update order with enhanced method
+                success = self.db.update_pipe_order_enhanced(
+                    order_id=order_id,
+                    status=status_var.get(),
+                    supplier=supplier_entry.get().strip(),
+                    order_date=order_date,
+                    expected_delivery_date=expected_date,
+                    actual_delivery_date=actual_date,
+                    notes=notes_text.get("1.0", tk.END).strip()
+                )
+                
+                if success:
+                    edit_window.destroy()
+                    self.refresh_pipe_orders()
+                    self.calculate_project_pipe_totals()
+                    
+                    # Refresh breakdown if this order is selected
+                    if self.pipe_orders_tree.selection():
+                        current_order = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                        if current_order == order_number:
+                            self.load_order_breakdown(order_number)
+                    
+                    self.show_status_toast("Order updated successfully")
+                else:
+                    Messagebox.show_error("Failed to update order", "Error")
+            
+            except ValueError as e:
+                Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+            except Exception as e:
+                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+        
+        ttk.Button(button_frame, text="Save Changes", bootstyle="primary", command=save_changes).pack(side="left", padx=5)
+        ttk.Button(button_frame, text="Cancel", bootstyle="secondary", command=edit_window.destroy).pack(side="right", padx=5)
+
+    def show_status_toast(self, message, duration=2000):
+        """Show a brief status toast notification"""
+        try:
+            # Create toast window
+            toast = ttk.Toplevel(self.root)
+            toast.overrideredirect(True)  # No window decorations
+            toast.attributes('-topmost', True)  # Stay on top
+            
+            # Position at the bottom right of the main window
+            x = self.root.winfo_x() + self.root.winfo_width() - 300
+            y = self.root.winfo_y() + self.root.winfo_height() - 100
+            toast.geometry(f"280x60+{x}+{y}")
+            
+            # Toast content with modern styling
+            toast_frame = ttk.Frame(toast, padding=15, bootstyle="success")
+            toast_frame.pack(fill="both", expand=True)
+            
+            # Message
+            ttk.Label(
+                toast_frame,
+                text=message,
+                font=("Helvetica", 11),
+                bootstyle="success",
+                wraplength=250
+            ).pack()
+            
+            # Auto-close after specified duration
+            toast.after(duration, toast.destroy)
+            
+        except Exception as e:
+            # Fallback to console if toast fails
+            self.logger.info(f"Status: {message}")
+            print(f"Status: {message}")
+
+    def quick_mark_pipe_item_delivered(self, item_id: int, structure_id: str):
+        """Quickly mark a pipe item as fully delivered"""
+        try:
+            # Get item details to determine full length
+            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            if not project:
+                return
+            
+            # Get current order
+            if not self.pipe_orders_tree.selection():
+                return
+            
+            order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+            pipe_orders = self.db.get_pipe_orders(project.id)
+            order_id = None
+            
+            for order in pipe_orders:
+                if order.get('order_number') == order_number:
+                    order_id = order.get('id')
+                    break
+            
+            if not order_id:
+                return
+            
+            # Get item details
+            order_items = self.db.get_pipe_order_items(order_id)
+            item_data = None
+            
+            for item in order_items:
+                if item['id'] == item_id:
+                    item_data = item
+                    break
+            
+            if not item_data:
+                Messagebox.show_error("Could not find pipe item details", "Error")
+                return
+            
+            total_length = item_data.get('length', 0)
+            
+            # Update pipe item as fully delivered
+            success = self.db.update_pipe_item_delivery(
+                item_id=item_id,
+                delivered_length=total_length,
+                status="delivered",
+                notes=f"Quick delivery - {total_length:.2f} ft delivered"
+            )
+            
+            if success:
+                self.show_status_toast(f"Marked {total_length:.2f} ft as delivered for structure {structure_id}")
+                # Refresh breakdown view
+                if self.pipe_orders_tree.selection():
+                    order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                    self.load_order_breakdown(order_number)
+            else:
+                Messagebox.show_error("Failed to update delivery", "Error")
+                
+        except Exception as e:
+            self.logger.error(f"Error quick marking pipe as delivered: {e}", exc_info=True)
+            Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+
+    def mark_pipe_item_not_delivered(self, item_id: int, structure_id: str):
+        """Mark a pipe item as not delivered"""
+        try:
+            # Confirm action
+            confirm = Messagebox.yesno(
+                f"Mark pipe for structure {structure_id} as NOT delivered?\n\nThis will reset the delivery status.",
+                "Confirm Status Change"
+            )
+            
+            if not confirm:
+                return
+            
+            # Mark as not delivered
+            success = self.db.update_pipe_item_delivery(
+                item_id=item_id,
+                delivered_length=0,
+                status="pending",
+                notes=None
+            )
+            
+            if success:
+                # Get current order for refresh
+                if self.pipe_orders_tree.selection():
+                    order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                    self.load_order_breakdown(order_number)
+                
+                self.calculate_project_pipe_totals()
+                self.show_status_toast(f"Pipe for {structure_id} marked as not delivered")
+            else:
+                Messagebox.show_error("Failed to update delivery status", "Error")
+                
+        except Exception as e:
+            self.logger.error(f"Error marking pipe item not delivered: {e}", exc_info=True)
+            Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+
+    def complete_partial_delivery(self, item_id: int, structure_id: str):
+        """Complete a partial delivery (mark remaining as delivered)"""
+        try:
+            # Get item details
+            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            if not project:
+                return
+            
+            # Get current order
+            if not self.pipe_orders_tree.selection():
+                return
+            
+            order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+            pipe_orders = self.db.get_pipe_orders(project.id)
+            order_id = None
+            
+            for order in pipe_orders:
+                if order.get('order_number') == order_number:
+                    order_id = order.get('id')
+                    break
+            
+            if not order_id:
+                return
+            
+            # Get item details
+            order_items = self.db.get_pipe_order_items(order_id)
+            item_data = None
+            
+            for item in order_items:
+                if item['id'] == item_id:
+                    item_data = item
+                    break
+            
+            if not item_data:
+                return
+            
+            current_delivered = item_data.get('delivered_length', 0)
+            total_length = item_data['length']
+            remaining = total_length - current_delivered
+            
+            if remaining <= 0:
+                self.show_status_toast("No remaining pipe to deliver")
+                return
+            
+            # Confirm completion
+            confirm = Messagebox.yesno(
+                f"Complete delivery for structure {structure_id}?\n\n"
+                f"Total Length: {total_length:.2f} ft\n"
+                f"Already Delivered: {current_delivered:.2f} ft\n"
+                f"Remaining: {remaining:.2f} ft\n\n"
+                f"This will mark the remaining {remaining:.2f} ft as delivered.",
+                "Confirm Completion"
+            )
+            
+            if confirm == "Yes":
+                # Update the delivery to complete
+                success = self.db.update_pipe_item_delivery(
+                    item_id=item_id,
+                    delivered_length=total_length,  # Mark as fully delivered
+                    status="delivered",
+                    notes=f"Completed delivery - {remaining:.2f} ft remaining marked as delivered"
+                )
+                
+                if success:
+                    self.show_status_toast(f"Completed delivery for structure {structure_id}")
+                    # Refresh the breakdown view
+                    if self.pipe_orders_tree.selection():
+                        order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                        self.load_order_breakdown(order_number)
+                else:
+                    Messagebox.show_error("Failed to update delivery", "Error")
+                    
+        except Exception as e:
+            self.logger.error(f"Error completing partial delivery: {e}", exc_info=True)
+            Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+
+    def show_partial_delivery_dialog(self, item_id: int, structure_id: str):
+        """Show dialog for partial delivery entry"""
+        try:
+            # Get item details
+            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            if not project:
+                return
+            
+            # Get current order and item data
+            if not self.pipe_orders_tree.selection():
+                return
+            
+            order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+            pipe_orders = self.db.get_pipe_orders(project.id)
+            order_id = None
+            
+            for order in pipe_orders:
+                if order.get('order_number') == order_number:
+                    order_id = order.get('id')
+                    break
+            
+            if not order_id:
+                return
+            
+            # Get item details
+            order_items = self.db.get_pipe_order_items(order_id)
+            item_data = None
+            
+            for item in order_items:
+                if item['id'] == item_id:
+                    item_data = item
+                    break
+            
+            if not item_data:
+                return
+            
+            total_length = item_data['length']
+            current_delivered = item_data.get('delivered_length', 0)
+            pipe_type = item_data['pipe_type']
+            
+            # Create partial delivery dialog
+            delivery_window = ttk.Toplevel(self.root)
+            delivery_window.title("Partial Delivery")
+            delivery_window.geometry("450x500")
+            delivery_window.transient(self.root)
+            delivery_window.grab_set()
+            
+            # Main container
+            main_frame = ttk.Frame(delivery_window, padding=20)
+            main_frame.pack(fill="both", expand=True)
+            
+            # Title
+            ttk.Label(
+                main_frame,
+                text="Record Partial Delivery",
+                font=("Helvetica", 14, "bold"),
+                bootstyle="primary"
+            ).pack(pady=(0, 20))
+            
+            # Item info
+            info_frame = ttk.Labelframe(main_frame, text="Pipe Item Details", padding=10)
+            info_frame.pack(fill="x", pady=(0, 20))
+            
+            ttk.Label(info_frame, text=f"Structure: {structure_id}", font=("Helvetica", 10, "bold")).pack(anchor="w")
+            ttk.Label(info_frame, text=f"Pipe Type: {pipe_type}").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Total Ordered: {total_length:.2f} ft").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Already Delivered: {current_delivered:.2f} ft").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Remaining: {total_length - current_delivered:.2f} ft").pack(anchor="w")
+            
+            # Delivery input section
+            delivery_frame = ttk.Labelframe(main_frame, text="New Delivery", padding=10)
+            delivery_frame.pack(fill="x", pady=(0, 20))
+            delivery_frame.columnconfigure(1, weight=1)
+            
+            # Delivered length
+            ttk.Label(delivery_frame, text="Length Delivered (ft):").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+            delivered_length_entry = ttk.Entry(delivery_frame)
+            delivered_length_entry.grid(row=0, column=1, sticky="ew", pady=5)
+            
+            # Quick buttons for common amounts
+            quick_frame = ttk.Frame(delivery_frame)
+            quick_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+            
+            ttk.Label(quick_frame, text="Quick Fill:", font=("Helvetica", 9)).pack(anchor="w")
+            
+            quick_buttons_frame = ttk.Frame(quick_frame)
+            quick_buttons_frame.pack(fill="x", pady=(5, 0))
+            
+            remaining = total_length - current_delivered
+            
+            def set_remaining():
+                delivered_length_entry.delete(0, tk.END)
+                delivered_length_entry.insert(0, str(remaining))
+            
+            def set_half():
+                delivered_length_entry.delete(0, tk.END)
+                delivered_length_entry.insert(0, str(remaining / 2))
+            
+            ttk.Button(
+                quick_buttons_frame,
+                text="All Remaining",
+                bootstyle="info-outline",
+                command=set_remaining
+            ).pack(side="left", padx=2)
+            
+            ttk.Button(
+                quick_buttons_frame,
+                text="Half Remaining",
+                bootstyle="info-outline",
+                command=set_half
+            ).pack(side="left", padx=2)
+            
+            # Delivery date
+            ttk.Label(delivery_frame, text="Delivery Date:").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=(15, 5))
+            date_frame = ttk.Frame(delivery_frame)
+            date_frame.grid(row=2, column=1, sticky="ew", pady=(15, 5))
+            date_frame.columnconfigure(0, weight=1)
+            
+            delivery_date_entry = ttk.Entry(date_frame)
+            delivery_date_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+            delivery_date_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
+            
+            ttk.Button(
+                date_frame,
+                text="📅",
+                width=3,
+                command=lambda: self.open_date_picker(delivery_date_entry)
+            ).pack(side="right")
+            
+            # Notes
+            ttk.Label(delivery_frame, text="Delivery Notes:").grid(row=3, column=0, sticky="nw", padx=(0, 10), pady=(15, 5))
+            notes_text = tk.Text(delivery_frame, height=3, wrap="word")
+            notes_text.grid(row=3, column=1, sticky="ew", pady=(15, 5))
+            
+            def save_partial_delivery():
+                try:
+                    delivered_length_str = delivered_length_entry.get().strip()
+                    delivery_date_str = delivery_date_entry.get().strip()
+                    notes = notes_text.get("1.0", tk.END).strip()
+                    
+                    # Validation
+                    if not delivered_length_str:
+                        Messagebox.show_error("Please enter delivered length", "Validation Error")
+                        return
+                    
+                    try:
+                        new_delivered = float(delivered_length_str)
+                    except ValueError:
+                        Messagebox.show_error("Invalid length value", "Validation Error")
+                        return
+                    
+                    if new_delivered <= 0:
+                        Messagebox.show_error("Delivered length must be greater than 0", "Validation Error")
+                        return
+                    
+                    # Calculate total delivered
+                    total_delivered = current_delivered + new_delivered
+                    
+                    if total_delivered > total_length:
+                        Messagebox.show_error(
+                            f"Total delivered ({total_delivered:.2f} ft) cannot exceed ordered length ({total_length:.2f} ft)",
+                            "Validation Error"
+                        )
+                        return
+                    
+                    # Parse delivery date
+                    try:
+                        delivery_date = datetime.strptime(delivery_date_str, "%m/%d/%Y") if delivery_date_str else datetime.now()
+                    except ValueError:
+                        Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+                        return
+                    
+                    # Determine status
+                    if total_delivered >= total_length:
+                        status = "delivered"
+                    else:
+                        status = "partial"
+                    
+                    # Add delivery date and amount to notes
+                    enhanced_notes = f"Partial delivery on {delivery_date.strftime('%m/%d/%Y')}: {new_delivered:.2f} ft"
+                    if notes:
+                        enhanced_notes += f"\nNotes: {notes}"
+                    
+                    # Update pipe item
+                    success = self.db.update_pipe_item_delivery(
+                        item_id=item_id,
+                        delivered_length=total_delivered,
+                        status=status,
+                        notes=enhanced_notes
+                    )
+                    
+                    if success:
+                        delivery_window.destroy()
+                        self.load_order_breakdown(order_number)
+                        self.calculate_project_pipe_totals()
+                        self.show_status_toast(f"Partial delivery recorded for {structure_id}")
+                    else:
+                        Messagebox.show_error("Failed to record partial delivery", "Error")
+                        
+                except Exception as e:
+                    self.logger.error(f"Error recording partial delivery: {e}", exc_info=True)
+                    Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+            
+            # Buttons
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill="x")
+            
+            ttk.Button(
+                button_frame,
+                text="Record Delivery",
+                bootstyle="primary",
+                command=save_partial_delivery
+            ).pack(side="left", padx=5)
+            
+            ttk.Button(
+                button_frame,
+                text="Cancel",
+                bootstyle="secondary",
+                command=delivery_window.destroy
+            ).pack(side="right", padx=5)
+            
+            # Focus on the length entry
+            delivered_length_entry.focus()
+            
+        except Exception as e:
+            self.logger.error(f"Error showing partial delivery dialog: {e}", exc_info=True)
+            Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
 
     def on_notebook_tab_changed(self, event):
         """Handle notebook tab changes to refresh data when switching to component tracking"""
@@ -3754,12 +4568,18 @@ class StructureManagementApp:
         ttk.Button(button_frame, text="Cancel", bootstyle="secondary", command=bulk_window.destroy).pack(side="right", padx=5)
 
     def refresh_pipe_orders(self):
-        """Refresh the pipe orders list and recalculate totals"""
+        """Enhanced refresh with better status handling"""
         self.load_pipe_orders()
         self.calculate_project_pipe_totals()
+        
+        # Update any status-related UI elements
+        if hasattr(self, 'pipe_filter_var'):
+            # Refresh the current filter
+            self.filter_pipe_orders()
 
-    def show_pipe_breakdown_context_menu(self, event):
-        """Show right-click context menu for pipe breakdown items"""
+
+    def show_pipe_breakdown_context_menu_enhanced(self, event):
+        """Show enhanced right-click context menu for pipe breakdown items with quick status updates"""
         # Get the item under the cursor
         item = self.order_breakdown_tree.identify_row(event.y)
         if not item:
@@ -3774,25 +4594,67 @@ class StructureManagementApp:
             return
         
         structure_id = values[0]
+        pipe_type = values[1]
+        delivered_status = values[4]  # "Yes", "No", or "Partial"
+        
+        # Get item ID from tags
+        tags = self.order_breakdown_tree.item(item, "tags")
+        item_id = None
+        for tag in tags:
+            if tag.isdigit():
+                item_id = int(tag)
+                break
+        
+        if not item_id:
+            return
         
         # Create context menu
         context_menu = tk.Menu(self.root, tearoff=0)
         
+        # Quick delivery status updates
+        if delivered_status.lower() == "no":
+            context_menu.add_command(
+                label="✓ Mark as Delivered",
+                command=lambda: self.quick_mark_pipe_item_delivered(item_id, structure_id)
+            )
+            
+            context_menu.add_command(
+                label="◐ Mark as Partial Delivery",
+                command=lambda: self.show_partial_delivery_dialog(item_id, structure_id)
+            )
+        elif "partial" in delivered_status.lower():
+            context_menu.add_command(
+                label="✓ Complete Delivery",
+                command=lambda: self.complete_partial_delivery(item_id, structure_id)
+            )
+            
+            context_menu.add_command(
+                label="✗ Mark as Not Delivered",
+                command=lambda: self.mark_pipe_item_not_delivered(item_id, structure_id)
+            )
+        else:  # Already delivered
+            context_menu.add_command(
+                label="✗ Mark as Not Delivered",
+                command=lambda: self.mark_pipe_item_not_delivered(item_id, structure_id)
+            )
+        
+        context_menu.add_separator()
+        
         context_menu.add_command(
-            label="Mark as Delivered",
-            command=self.mark_pipe_delivered
+            label="Add/Edit Notes",
+            command=lambda: self.add_pipe_notes_enhanced(item_id, structure_id, pipe_type)
         )
         
         context_menu.add_command(
-            label="Add Notes", 
-            command=self.add_pipe_notes
+            label="Edit Delivery Details",
+            command=lambda: self.show_pipe_item_edit_dialog(item_id, structure_id, pipe_type)
         )
         
         context_menu.add_separator()
         
         context_menu.add_command(
             label=f"View Structure {structure_id}",
-            command=self.view_structure_from_pipe_item
+            command=lambda: self.view_structure_from_pipe_item_enhanced(structure_id)
         )
         
         # Show the menu
@@ -3800,6 +4662,187 @@ class StructureManagementApp:
             context_menu.tk_popup(event.x_root, event.y_root)
         finally:
             context_menu.grab_release()
+
+    def show_pipe_item_edit_dialog(self, item_id: int, structure_id: str, pipe_type: str):
+        """Show comprehensive edit dialog for pipe item with delivery tracking"""
+        try:
+            # Get current item details
+            item_details = self.db.get_pipe_item_details(item_id)
+            if not item_details:
+                Messagebox.show_error("Could not find pipe item details", "Error")
+                return
+            
+            # Create edit dialog
+            edit_window = ttk.Toplevel(self.root)
+            edit_window.title("Edit Pipe Item")
+            edit_window.geometry("500x600")
+            edit_window.transient(self.root)
+            edit_window.grab_set()
+            
+            # Main container
+            main_frame = ttk.Frame(edit_window, padding=20)
+            main_frame.pack(fill="both", expand=True)
+            
+            # Title
+            ttk.Label(
+                main_frame,
+                text="Edit Pipe Item Details",
+                font=("Helvetica", 14, "bold"),
+                bootstyle="primary"
+            ).pack(pady=(0, 20))
+            
+            # Item info (read-only)
+            info_frame = ttk.Labelframe(main_frame, text="Item Information", padding=10)
+            info_frame.pack(fill="x", pady=(0, 20))
+            
+            ttk.Label(info_frame, text=f"Structure: {structure_id}", font=("Helvetica", 10, "bold")).pack(anchor="w")
+            ttk.Label(info_frame, text=f"Pipe Type: {pipe_type}").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Order: {item_details.get('order_number', 'Unknown')}").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Total Length: {item_details.get('length', 0):.2f} ft").pack(anchor="w")
+            
+            # Delivery details section
+            delivery_frame = ttk.Labelframe(main_frame, text="Delivery Details", padding=10)
+            delivery_frame.pack(fill="x", pady=(0, 20))
+            delivery_frame.columnconfigure(1, weight=1)
+            
+            # Status
+            ttk.Label(delivery_frame, text="Status:").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=5)
+            status_var = tk.StringVar(value=item_details.get('status', 'pending'))
+            status_combo = ttk.Combobox(
+                delivery_frame, 
+                textvariable=status_var, 
+                values=["pending", "ordered", "delivered"],
+                state="readonly"
+            )
+            status_combo.grid(row=0, column=1, sticky="ew", pady=5)
+            
+            # Delivered length
+            ttk.Label(delivery_frame, text="Delivered Length (ft):").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=5)
+            delivered_entry = ttk.Entry(delivery_frame)
+            delivered_entry.grid(row=1, column=1, sticky="ew", pady=5)
+            delivered_entry.insert(0, str(item_details.get('delivered_length', 0)))
+            
+            # Delivery date
+            ttk.Label(delivery_frame, text="Delivery Date:").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=5)
+            date_frame = ttk.Frame(delivery_frame)
+            date_frame.grid(row=2, column=1, sticky="ew", pady=5)
+            date_frame.columnconfigure(0, weight=1)
+            
+            delivery_date_entry = ttk.Entry(date_frame)
+            delivery_date_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+            
+            ttk.Button(
+                date_frame,
+                text="📅",
+                width=3,
+                command=lambda: self.open_date_picker(delivery_date_entry)
+            ).pack(side="right")
+            
+            # Status change triggers
+            def on_status_change(*args):
+                if status_var.get() == "delivered":
+                    if not delivery_date_entry.get():
+                        delivery_date_entry.delete(0, tk.END)
+                        delivery_date_entry.insert(0, datetime.now().strftime("%m/%d/%Y"))
+                    if not delivered_entry.get() or float(delivered_entry.get() or 0) == 0:
+                        delivered_entry.delete(0, tk.END)
+                        delivered_entry.insert(0, str(item_details.get('length', 0)))
+            
+            status_var.trace("w", on_status_change)
+            
+            # Notes section
+            notes_frame = ttk.Labelframe(main_frame, text="Notes", padding=10)
+            notes_frame.pack(fill="both", expand=True, pady=(0, 20))
+            
+            notes_text = tk.Text(notes_frame, height=6, wrap="word")
+            notes_text.pack(fill="both", expand=True)
+            
+            # Pre-fill notes
+            if item_details.get('notes'):
+                notes_text.insert("1.0", item_details['notes'])
+            
+            def save_changes():
+                try:
+                    # Validate delivered length
+                    delivered_length_str = delivered_entry.get().strip()
+                    if delivered_length_str:
+                        try:
+                            delivered_length = float(delivered_length_str)
+                            if delivered_length < 0:
+                                Messagebox.show_error("Delivered length cannot be negative", "Validation Error")
+                                return
+                            if delivered_length > item_details.get('length', 0):
+                                Messagebox.show_error("Delivered length cannot exceed total length", "Validation Error")
+                                return
+                        except ValueError:
+                            Messagebox.show_error("Invalid delivered length value", "Validation Error")
+                            return
+                    else:
+                        delivered_length = 0
+                    
+                    # Parse delivery date
+                    delivery_date = None
+                    if delivery_date_entry.get().strip():
+                        try:
+                            delivery_date = datetime.strptime(delivery_date_entry.get().strip(), "%m/%d/%Y")
+                        except ValueError:
+                            Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
+                            return
+                    
+                    # Get notes
+                    notes = notes_text.get("1.0", tk.END).strip()
+                    
+                    # Update the item
+                    success = self.db.update_pipe_item_delivery_enhanced(
+                        item_id=item_id,
+                        delivered_length=delivered_length,
+                        status=status_var.get(),
+                        notes=notes if notes else None,
+                        delivery_date=delivery_date,
+                        update_notes=True
+                    )
+                    
+                    if success:
+                        edit_window.destroy()
+                        
+                        # Refresh breakdown view
+                        if self.pipe_orders_tree.selection():
+                            order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                            self.load_order_breakdown(order_number)
+                        
+                        self.calculate_project_pipe_totals()
+                        self.show_status_toast("Pipe item updated successfully")
+                    else:
+                        Messagebox.show_error("Failed to update pipe item", "Error")
+                        
+                except Exception as e:
+                    self.logger.error(f"Error saving pipe item changes: {e}", exc_info=True)
+                    Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+            
+            # Buttons
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill="x")
+            
+            ttk.Button(
+                button_frame,
+                text="Save Changes",
+                bootstyle="primary",
+                command=save_changes
+            ).pack(side="left", padx=5)
+            
+            ttk.Button(
+                button_frame,
+                text="Cancel",
+                bootstyle="secondary",
+                command=edit_window.destroy
+            ).pack(side="right", padx=5)
+            
+            # Focus on status combo
+            status_combo.focus()
+            
+        except Exception as e:
+            self.logger.error(f"Error showing pipe item edit dialog: {e}", exc_info=True)
+            Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
 
     def load_structure_components(self, event):
         """Load components for the selected structure"""
@@ -4572,7 +5615,7 @@ class StructureManagementApp:
         # Create delivery dialog
         delivery_window = ttk.Toplevel(self.root)
         delivery_window.title("Mark Pipe as Delivered")
-        delivery_window.geometry("400x300")
+        delivery_window.geometry("403x403")
         delivery_window.transient(self.root)
         delivery_window.grab_set()
         
@@ -4681,153 +5724,186 @@ class StructureManagementApp:
             command=delivery_window.destroy
         ).pack(side="right", padx=5)
 
-    def add_pipe_notes(self):
-        """Add notes to selected pipe item"""
-        selection = self.order_breakdown_tree.selection()
-        if not selection:
-            Messagebox.show_warning("Please select a pipe item first", "No Item Selected")
-            return
-        
-        values = self.order_breakdown_tree.item(selection[0], "values")
-        structure_id = values[0]
-        pipe_type = values[1]
-        current_notes = values[5] if len(values) > 5 else ""
-        
-        # Get item ID from tags
-        tags = self.order_breakdown_tree.item(selection[0], "tags")
-        item_id = None
-        for tag in tags:
-            if tag.isdigit():
-                item_id = int(tag)
-                break
-        
-        if not item_id:
-            Messagebox.show_error("Could not identify pipe item", "Error")
-            return
-        
-        # Create notes dialog
-        notes_window = ttk.Toplevel(self.root)
-        notes_window.title("Add Pipe Notes")
-        notes_window.geometry("500x400")
-        notes_window.transient(self.root)
-        notes_window.grab_set()
-        
-        # Main container
-        main_frame = ttk.Frame(notes_window, padding=20)
-        main_frame.pack(fill="both", expand=True)
-        
-        # Title
-        ttk.Label(
-            main_frame,
-            text="Add Notes to Pipe Item",
-            font=("Helvetica", 14, "bold"),
-            bootstyle="primary"
-        ).pack(pady=(0, 20))
-        
-        # Item info
-        info_frame = ttk.Labelframe(main_frame, text="Pipe Item", padding=10)
-        info_frame.pack(fill="x", pady=(0, 20))
-        
-        ttk.Label(info_frame, text=f"Structure: {structure_id}", font=("Helvetica", 10, "bold")).pack(anchor="w")
-        ttk.Label(info_frame, text=f"Pipe Type: {pipe_type}").pack(anchor="w")
-        
-        # Notes section
-        notes_frame = ttk.Labelframe(main_frame, text="Notes", padding=10)
-        notes_frame.pack(fill="both", expand=True, pady=(0, 20))
-        
-        # Notes text area
-        notes_text = tk.Text(notes_frame, wrap="word", font=("Helvetica", 11))
-        notes_scrollbar = ttk.Scrollbar(notes_frame, orient="vertical", command=notes_text.yview)
-        notes_text.configure(yscrollcommand=notes_scrollbar.set)
-        
-        notes_text.pack(side="left", fill="both", expand=True)
-        notes_scrollbar.pack(side="right", fill="y")
-        
-        # Pre-fill with existing notes
-        if current_notes:
-            notes_text.insert("1.0", current_notes)
-        
-        # Quick note buttons
-        quick_notes_frame = ttk.Frame(main_frame)
-        quick_notes_frame.pack(fill="x", pady=(0, 20))
-        
-        ttk.Label(quick_notes_frame, text="Quick Notes:", font=("Helvetica", 10, "bold")).pack(anchor="w")
-        
-        quick_buttons_frame = ttk.Frame(quick_notes_frame)
-        quick_buttons_frame.pack(fill="x", pady=(5, 0))
-        
-        def add_quick_note(note_text):
-            current = notes_text.get("1.0", tk.END).strip()
-            if current:
-                notes_text.insert(tk.END, f"\n{note_text}")
-            else:
-                notes_text.insert("1.0", note_text)
-        
-        quick_notes = [
-            "Delivered on time",
-            "Delivered late",
-            "Partial delivery",
-            "Quality issue noted",
-            "Installed on site",
-            "Stored on site"
-        ]
-        
-        for i, note in enumerate(quick_notes):
-            if i % 3 == 0:  # Start new row every 3 buttons
-                row_frame = ttk.Frame(quick_buttons_frame)
-                row_frame.pack(fill="x", pady=2)
+    def add_pipe_notes_enhanced(self, item_id: int, structure_id: str, pipe_type: str):
+        """Enhanced pipe notes dialog with better UX and history tracking"""
+        try:
+            # Get current notes
+            item_details = self.db.get_pipe_item_details(item_id)
+            if not item_details:
+                Messagebox.show_error("Could not find pipe item details", "Error")
+                return
+            
+            current_notes = item_details.get('notes', '') or ''
+            
+            # Create notes dialog
+            notes_window = ttk.Toplevel(self.root)
+            notes_window.title("Pipe Item Notes")
+            notes_window.geometry("600x500")
+            notes_window.transient(self.root)
+            notes_window.grab_set()
+            
+            # Main container
+            main_frame = ttk.Frame(notes_window, padding=20)
+            main_frame.pack(fill="both", expand=True)
+            
+            # Title
+            ttk.Label(
+                main_frame,
+                text="Edit Pipe Item Notes",
+                font=("Helvetica", 14, "bold"),
+                bootstyle="primary"
+            ).pack(pady=(0, 20))
+            
+            # Item info
+            info_frame = ttk.Labelframe(main_frame, text="Pipe Item Details", padding=10)
+            info_frame.pack(fill="x", pady=(0, 20))
+            
+            ttk.Label(info_frame, text=f"Structure: {structure_id}", font=("Helvetica", 10, "bold")).pack(anchor="w")
+            ttk.Label(info_frame, text=f"Pipe Type: {pipe_type}").pack(anchor="w")
+            ttk.Label(info_frame, text=f"Order: {item_details.get('order_number', 'Unknown')}").pack(anchor="w")
+            
+            # Status info
+            status_info = f"Status: {item_details.get('status', 'unknown').title()}"
+            delivered = item_details.get('delivered_length', 0)
+            total = item_details.get('length', 0)
+            if delivered > 0:
+                status_info += f" | Delivered: {delivered:.2f}/{total:.2f} ft"
+            
+            ttk.Label(info_frame, text=status_info, bootstyle="info").pack(anchor="w")
+            
+            # Notes section
+            notes_frame = ttk.Labelframe(main_frame, text="Notes", padding=10)
+            notes_frame.pack(fill="both", expand=True, pady=(0, 20))
+            
+            # Notes text area with scrollbar
+            notes_container = ttk.Frame(notes_frame)
+            notes_container.pack(fill="both", expand=True)
+            
+            notes_text = tk.Text(notes_container, wrap="word", font=("Helvetica", 11))
+            notes_scrollbar = ttk.Scrollbar(notes_container, orient="vertical", command=notes_text.yview)
+            notes_text.configure(yscrollcommand=notes_scrollbar.set)
+            
+            notes_text.pack(side="left", fill="both", expand=True)
+            notes_scrollbar.pack(side="right", fill="y")
+            
+            # Pre-fill with existing notes
+            if current_notes:
+                notes_text.insert("1.0", current_notes)
+            
+            # Quick note templates
+            quick_notes_frame = ttk.Frame(main_frame)
+            quick_notes_frame.pack(fill="x", pady=(0, 20))
+            
+            ttk.Label(quick_notes_frame, text="Quick Templates:", font=("Helvetica", 10, "bold")).pack(anchor="w")
+            
+            templates_frame = ttk.Frame(quick_notes_frame)
+            templates_frame.pack(fill="x", pady=(5, 0))
+            
+            def add_template_note(template_text):
+                current = notes_text.get("1.0", tk.END).strip()
+                timestamp = datetime.now().strftime("%m/%d/%Y %H:%M")
+                new_note = f"[{timestamp}] {template_text}"
+                
+                if current:
+                    notes_text.insert(tk.END, f"\n{new_note}")
+                else:
+                    notes_text.insert("1.0", new_note)
+                
+                # Scroll to end
+                notes_text.see(tk.END)
+            
+            # Template buttons in rows
+            templates = [
+                ("Delivered on time", "On-time delivery completed"),
+                ("Delayed delivery", "Delivery delayed"),
+                ("Quality issue", "Quality concern noted"),
+                ("Partial load", "Partial delivery received"),
+                ("Weather delay", "Delayed due to weather"),
+                ("Site access issue", "Delivery access problem")
+            ]
+            
+            row_frame = None
+            for i, (btn_text, template_text) in enumerate(templates):
+                if i % 3 == 0:  # New row every 3 buttons
+                    row_frame = ttk.Frame(templates_frame)
+                    row_frame.pack(fill="x", pady=2)
+                
+                ttk.Button(
+                    row_frame,
+                    text=btn_text,
+                    bootstyle="info-outline",
+                    command=lambda t=template_text: add_template_note(t)
+                ).pack(side="left", padx=2)
+            
+            # Add timestamp button
+            def add_timestamp():
+                timestamp = datetime.now().strftime("%m/%d/%Y %H:%M")
+                current_pos = notes_text.index(tk.INSERT)
+                notes_text.insert(current_pos, f"[{timestamp}] ")
+            
+            timestamp_frame = ttk.Frame(main_frame)
+            timestamp_frame.pack(fill="x", pady=(0, 20))
             
             ttk.Button(
-                row_frame,
-                text=note,
-                bootstyle="info-outline",
-                command=lambda n=note: add_quick_note(n)
-            ).pack(side="left", padx=2)
-        
-        def save_notes():
-            try:
-                notes = notes_text.get("1.0", tk.END).strip()
-                
-                # Update pipe item notes (using existing delivery info)
-                success = self.db.update_pipe_item_delivery(
-                    item_id=item_id,
-                    delivered_length=None,  # Don't change delivery status
-                    status=None,  # Don't change status
-                    notes=notes if notes else None
-                )
-                
-                if success:
-                    Messagebox.show_info("Notes updated successfully", "Success")
-                    notes_window.destroy()
-                    
-                    # Refresh breakdown view
-                    if self.pipe_orders_tree.selection():
-                        order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
-                        self.load_order_breakdown(order_number)
-                else:
-                    Messagebox.show_error("Failed to update notes", "Error")
+                timestamp_frame,
+                text="Insert Timestamp",
+                bootstyle="secondary-outline",
+                command=add_timestamp
+            ).pack(side="left")
             
-            except Exception as e:
-                self.logger.error(f"Error adding pipe notes: {e}", exc_info=True)
-                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
-        
-        # Buttons
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill="x")
-        
-        ttk.Button(
-            button_frame,
-            text="Save Notes",
-            bootstyle="primary",
-            command=save_notes
-        ).pack(side="left", padx=5)
-        
-        ttk.Button(
-            button_frame,
-            text="Cancel",
-            bootstyle="secondary",
-            command=notes_window.destroy
-        ).pack(side="right", padx=5)
+            def save_notes():
+                try:
+                    notes = notes_text.get("1.0", tk.END).strip()
+                    
+                    # Convert empty string to None to properly clear notes in database
+                    notes_value = notes if notes else None
+                    
+                    # Update pipe item notes
+                    success = self.db.update_pipe_item_delivery_enhanced(
+                        item_id=item_id,
+                        notes=notes_value
+                    )
+                    
+                    if success:
+                        notes_window.destroy()
+                        
+                        # Refresh breakdown view
+                        if self.pipe_orders_tree.selection():
+                            order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+                            self.load_order_breakdown(order_number)
+                        
+                        self.show_status_toast("Notes updated successfully")
+                    else:
+                        Messagebox.show_error("Failed to update notes", "Error")
+                
+                except Exception as e:
+                    self.logger.error(f"Error saving pipe notes: {e}", exc_info=True)
+                    Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
+            
+            # Buttons
+            button_frame = ttk.Frame(main_frame)
+            button_frame.pack(fill="x")
+            
+            ttk.Button(
+                button_frame,
+                text="Save Notes",
+                bootstyle="primary",
+                command=save_notes
+            ).pack(side="left", padx=5)
+            
+            ttk.Button(
+                button_frame,
+                text="Cancel",
+                bootstyle="secondary",
+                command=notes_window.destroy
+            ).pack(side="right", padx=5)
+            
+            # Focus on notes text
+            notes_text.focus()
+            
+        except Exception as e:
+            self.logger.error(f"Error showing enhanced pipe notes dialog: {e}", exc_info=True)
+            Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
 
     def generate_pipe_delivery_report(self):
         """Generate a comprehensive pipe delivery report"""
@@ -5064,26 +6140,31 @@ class StructureManagementApp:
         ).pack(side="right", padx=5)
 
 
-    def view_structure_from_pipe_item(self):
-        """View structure details from pipe breakdown item"""
-        selection = self.order_breakdown_tree.selection()
-        if not selection:
-            return
-        
-        structure_id = self.order_breakdown_tree.item(selection[0], "values")[0]
-        
-        # Switch to Structures tab and select the structure
-        self.notebook.select(0)  # Select first tab (Structures)
-        
-        # Find and select the structure in the tree
-        for item in self.structure_tree.get_children():
-            if self.structure_tree.item(item, "values")[0] == structure_id:
-                self.structure_tree.selection_set(item)
-                self.structure_tree.see(item)
-                self.show_structure_details(None)
-                break
-        
-        Messagebox.show_info(f"Switched to Structures tab and selected {structure_id}", "Navigation")
+    def view_structure_from_pipe_item_enhanced(self, structure_id: str):
+        """Enhanced structure navigation with better feedback"""
+        try:
+            # Switch to Structures tab and select the structure
+            self.notebook.select(0)  # Select first tab (Structures)
+            
+            # Find and select the structure in the tree
+            found = False
+            for item in self.structure_tree.get_children():
+                item_values = self.structure_tree.item(item, "values")
+                if item_values and len(item_values) > 0 and item_values[0] == structure_id:
+                    self.structure_tree.selection_set(item)
+                    self.structure_tree.see(item)
+                    self.show_structure_details(None)
+                    found = True
+                    break
+            
+            if found:
+                self.show_status_toast(f"Found and selected structure {structure_id}")
+            else:
+                self.show_status_toast(f"Structure {structure_id} not found in current view")
+                
+        except Exception as e:
+            self.logger.error(f"Error navigating to structure: {e}", exc_info=True)
+            Messagebox.show_error(f"Could not navigate to structure {structure_id}", "Navigation Error")
 
     def export_pipe_totals_csv(self, pipe_totals):
         """Export pipe totals to CSV"""
@@ -5414,37 +6495,43 @@ class StructureManagementApp:
         # For now, it's calculated based on component status
         pass
 
+    def update_existing_context_menu_bindings(self):
+        """Update existing context menu bindings to use enhanced versions"""
+        
+        # Remove old bindings if they exist
+        if hasattr(self, 'pipe_orders_tree'):
+            self.pipe_orders_tree.unbind('<Button-3>')
+            self.pipe_orders_tree.bind('<Button-3>', self.show_pipe_order_context_menu)
+        
+        if hasattr(self, 'order_breakdown_tree'):
+            self.order_breakdown_tree.unbind('<Button-3>')
+            self.order_breakdown_tree.bind('<Button-3>', self.show_pipe_breakdown_context_menu_enhanced)
+
     def force_structure_tree_refresh(self):
         """Force refresh of the structure tree display"""
         print("DEBUG: Force refreshing structure tree")
         
-        if not hasattr(self, 'component_structure_tree'):
-            print("ERROR: component_structure_tree doesn't exist!")
-            return
-        
-        # Clear and reload
-        for item in self.component_structure_tree.get_children():
-            self.component_structure_tree.delete(item)
-        
-        # Add a test item to verify the tree is working
-        test_item = self.component_structure_tree.insert(
-            "", "end", 
-            values=("TEST-01", "CB", "Test", "1/1"),
-            tags=("test",)
-        )
-        print(f"Added test item: {test_item}")
-        
-        # Force update
-        self.component_structure_tree.update_idletasks()
-        self.component_structure_tree.update()
-        
-        # Check if test item is visible
-        children = self.component_structure_tree.get_children()
-        print(f"After test insert, tree has {len(children)} children")
-        
-        # Remove test item and load real data
-        self.component_structure_tree.delete(test_item)
-        self.load_structures_for_components()
+        try:
+            if not hasattr(self, 'component_structure_tree'):
+                print("ERROR: component_structure_tree doesn't exist!")
+                return
+            
+            # Clear and reload the structure tree
+            for item in self.component_structure_tree.get_children():
+                self.component_structure_tree.delete(item)
+            
+            # Reload structures for components
+            self.load_structures_for_components()
+            
+            # Also refresh the main structure tree if it exists
+            if hasattr(self, 'structure_tree'):
+                self.load_structures()
+            
+            print("DEBUG: Structure tree refresh completed")
+            
+        except Exception as e:
+            self.logger.error(f"Error refreshing structure tree: {e}", exc_info=True)
+            print(f"ERROR: Failed to refresh structure tree: {e}")
 
     def add_component(self):
         """Add a new component to the selected structure"""
@@ -6876,6 +7963,81 @@ class StructureManagementApp:
             bootstyle="secondary",
             command=about_window.destroy
         ).pack(pady=(20, 0))
+
+    def show_shortcuts(self):
+        """Show keyboard shortcuts dialog"""
+        shortcuts_window = ttk.Toplevel(self.root)
+        shortcuts_window.title("Keyboard Shortcuts")
+        shortcuts_window.geometry("500x400")
+        shortcuts_window.resizable(False, False)
+        
+        # Center the window
+        shortcuts_window.transient(self.root)
+        shortcuts_window.grab_set()
+        
+        # Main frame with padding
+        main_frame = ttk.Frame(shortcuts_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Keyboard Shortcuts", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Create scrollable frame for shortcuts
+        shortcuts_frame = ttk.Frame(main_frame)
+        shortcuts_frame.pack(fill="both", expand=True)
+        
+        # Add shortcuts (you can customize these based on your application)
+        shortcuts = [
+            ("Ctrl+N", "New Structure"),
+            ("Ctrl+S", "Save Current Structure"),
+            ("Ctrl+F", "Find Structure"),
+            ("Ctrl+D", "Delete Selected Structure"),
+            ("F5", "Refresh View"),
+            ("Ctrl+R", "Generate Report"),
+            ("Ctrl+E", "Export Data"),
+            ("Ctrl+I", "Import Data"),
+            ("Escape", "Close Dialog"),
+            ("Tab", "Navigate Fields"),
+            ("Enter", "Confirm Action"),
+            ("Delete", "Delete Selected Item")
+        ]
+        
+        # Display shortcuts in a formatted way
+        for i, (key, description) in enumerate(shortcuts):
+            shortcut_frame = ttk.Frame(shortcuts_frame)
+            shortcut_frame.pack(fill="x", pady=2)
+            
+            # Key combination (left aligned)
+            ttk.Label(
+                shortcut_frame, 
+                text=key, 
+                font=("Courier", 10, "bold"),
+                bootstyle="info",
+                width=15
+            ).pack(side="left", padx=(0, 20))
+            
+            # Description (left aligned)
+            ttk.Label(
+                shortcut_frame, 
+                text=description,
+                font=("Helvetica", 10)
+            ).pack(side="left", anchor="w")
+        
+        # Close button
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x", pady=(20, 0))
+        
+        ttk.Button(
+            button_frame,
+            text="Close",
+            bootstyle="secondary",
+            command=shortcuts_window.destroy
+        ).pack(side="right")
 
     def add_structure(self):
         """Add a new structure to the database based on form fields with auto-base component"""

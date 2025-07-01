@@ -1896,3 +1896,210 @@ class DatabaseManager:
         except sqlite3.Error as e:
             self.logger.error(f"Error getting pipe order details: {e}", exc_info=True)
             return None
+        
+    def update_pipe_order_enhanced(self, order_id: int, status: str, supplier: str = None,
+                                order_date: datetime = None, expected_delivery_date: datetime = None,
+                                actual_delivery_date: datetime = None, notes: str = None) -> bool:
+        """Enhanced pipe order update with all fields"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                
+                # Format dates properly
+                order_date_str = order_date.isoformat() if order_date else None
+                expected_date_str = expected_delivery_date.isoformat() if expected_delivery_date else None
+                delivery_date_str = actual_delivery_date.isoformat() if actual_delivery_date else None
+                
+                cursor.execute('''
+                    UPDATE pipe_orders SET
+                        status = ?,
+                        supplier = ?,
+                        order_date = ?,
+                        expected_delivery_date = ?,
+                        actual_delivery_date = ?,
+                        notes = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                ''', (status, supplier, order_date_str, expected_date_str, delivery_date_str, notes, now, order_id))
+                
+                success = cursor.rowcount > 0
+                if success:
+                    self.logger.info(f"Enhanced update for pipe order {order_id}")
+                return success
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Error updating pipe order enhanced: {e}", exc_info=True)
+            return False
+
+    def get_pipe_item_details(self, item_id: int) -> Optional[Dict[str, Any]]:
+        """Get detailed information about a specific pipe item"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT poi.*, s.structure_type, po.order_number
+                    FROM pipe_order_items poi
+                    LEFT JOIN structures s ON poi.structure_id = s.structure_id
+                    LEFT JOIN pipe_orders po ON poi.order_id = po.id
+                    WHERE poi.id = ?
+                ''', (item_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        'id': row[0],
+                        'order_id': row[1],
+                        'structure_id': row[2],
+                        'pipe_type': row[3],
+                        'diameter': row[4],
+                        'length': row[5],
+                        'delivered_length': row[6],
+                        'status': row[7],
+                        'notes': row[8],
+                        'created_at': row[9],
+                        'updated_at': row[10],
+                        'structure_type': row[11],
+                        'order_number': row[12]
+                    }
+                return None
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting pipe item details: {e}", exc_info=True)
+            return None
+
+    def update_pipe_item_delivery_enhanced(self, item_id: int, delivered_length: float = None, 
+                                    status: str = None, notes: str = None,
+                                    delivery_date: datetime = None, update_notes: bool = False) -> bool:
+        """Enhanced pipe item delivery update with optional delivery date tracking
+        
+        Args:
+            item_id: ID of the pipe item to update
+            delivered_length: New delivered length (optional)
+            status: New status (optional)
+            notes: New notes - can be None to clear notes, empty string, or actual notes (optional)
+            delivery_date: Delivery date (optional)
+            update_notes: Force update of notes field even if notes is None (useful for clearing notes)
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                now = datetime.now().isoformat()
+                
+                # Build dynamic query based on provided parameters
+                update_fields = []
+                update_values = []
+                
+                if delivered_length is not None:
+                    update_fields.append("delivered_length = ?")
+                    update_values.append(delivered_length)
+                
+                if status is not None:
+                    update_fields.append("status = ?")
+                    update_values.append(status)
+                
+                # Fix: Always update notes if explicitly requested or if notes is provided
+                if notes is not None or update_notes:
+                    update_fields.append("notes = ?")
+                    update_values.append(notes)  # This will be None for clearing notes
+                
+                # Add delivery date if provided
+                if delivery_date is not None:
+                    update_fields.append("delivery_date = ?")
+                    update_values.append(delivery_date.isoformat())
+                
+                # Always update the timestamp
+                update_fields.append("updated_at = ?")
+                update_values.append(now)
+                
+                # Add the item_id for the WHERE clause
+                update_values.append(item_id)
+                
+                if not update_fields:
+                    return False  # Nothing to update
+                
+                query = f"UPDATE pipe_order_items SET {', '.join(update_fields)} WHERE id = ?"
+                cursor.execute(query, update_values)
+                
+                success = cursor.rowcount > 0
+                if success:
+                    self.logger.info(f"Enhanced delivery update for pipe item {item_id}")
+                return success
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Error updating pipe item delivery enhanced: {e}", exc_info=True)
+            return False
+
+    def get_pipe_delivery_summary(self, project_id: int) -> Dict[str, Any]:
+        """Get comprehensive delivery summary for pipe tracking dashboard"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if tables exist
+                cursor.execute('''
+                    SELECT name FROM sqlite_master 
+                    WHERE type='table' AND name IN ('pipe_orders', 'pipe_order_items')
+                ''')
+                
+                existing_tables = [row[0] for row in cursor.fetchall()]
+                if len(existing_tables) < 2:
+                    return {
+                        'total_orders': 0,
+                        'total_length': 0,
+                        'delivered_length': 0,
+                        'pending_length': 0,
+                        'completion_percentage': 0,
+                        'orders_by_status': {}
+                    }
+                
+                # Get order counts by status
+                cursor.execute('''
+                    SELECT status, COUNT(*) as count
+                    FROM pipe_orders
+                    WHERE project_id = ?
+                    GROUP BY status
+                ''', (project_id,))
+                
+                orders_by_status = {}
+                for row in cursor.fetchall():
+                    orders_by_status[row[0]] = row[1]
+                
+                # Get total pipe lengths
+                cursor.execute('''
+                    SELECT 
+                        COUNT(DISTINCT po.id) as total_orders,
+                        COALESCE(SUM(poi.length), 0) as total_length,
+                        COALESCE(SUM(poi.delivered_length), 0) as delivered_length
+                    FROM pipe_orders po
+                    LEFT JOIN pipe_order_items poi ON po.id = poi.order_id
+                    WHERE po.project_id = ?
+                ''', (project_id,))
+                
+                row = cursor.fetchone()
+                total_orders = row[0] if row else 0
+                total_length = row[1] if row else 0
+                delivered_length = row[2] if row else 0
+                
+                pending_length = total_length - delivered_length
+                completion_percentage = (delivered_length / total_length * 100) if total_length > 0 else 0
+                
+                return {
+                    'total_orders': total_orders,
+                    'total_length': total_length,
+                    'delivered_length': delivered_length,
+                    'pending_length': pending_length,
+                    'completion_percentage': completion_percentage,
+                    'orders_by_status': orders_by_status
+                }
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting pipe delivery summary: {e}", exc_info=True)
+            return {
+                'total_orders': 0,
+                'total_length': 0,
+                'delivered_length': 0,
+                'pending_length': 0,
+                'completion_percentage': 0,
+                'orders_by_status': {}
+            }
