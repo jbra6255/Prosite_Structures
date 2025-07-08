@@ -727,11 +727,11 @@ class StructureManagementApp:
         settings_menu.add_command(label="User Preferences", command=self.show_preferences)
         settings_menu.add_command(label="Project Settings", command=self.show_project_settings)
         
-        # Help menu - FIXED: Complete the label definition
+        # Help menu - Complete the label definition
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(label="Documentation", command=self.show_documentation)
-        help_menu.add_command(label="About", command=self.show_about)  # Fixed incomplete label
+        help_menu.add_command(label="About", command=self.show_about)
         help_menu.add_separator()
         help_menu.add_command(label="Keyboard Shortcuts", command=self.show_shortcuts)
 
@@ -778,7 +778,7 @@ class StructureManagementApp:
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
         
-        # Enhanced structure treeview with status information - FIXED COLUMN ALIGNMENT
+        # Enhanced structure treeview with status information 
         columns = ("ID", "TYPE", "STATUS", "PROGRESS")
         self.component_structure_tree = ttk.Treeview(
             tree_frame,
@@ -849,7 +849,7 @@ class StructureManagementApp:
         component_list_frame.columnconfigure(0, weight=1)
         component_list_frame.rowconfigure(0, weight=1)
         
-        # Enhanced component treeview - FIXED COLUMN ALIGNMENT
+        # Enhanced component treeview
         columns = ("COMPONENT", "STATUS", "ORDERED", "EXPECTED", "DELIVERED", "NOTES")
         self.component_tree = ttk.Treeview(
             component_list_frame,
@@ -1975,7 +1975,7 @@ class StructureManagementApp:
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill="x")
         
-        def save_changes():
+        def save_changes(): 
             try:
                 # Parse dates
                 order_date = None
@@ -1991,6 +1991,10 @@ class StructureManagementApp:
                 if actual_entry.get().strip():
                     actual_date = datetime.strptime(actual_entry.get().strip(), "%m/%d/%Y")
                 
+                # Get notes and convert empty string to None for clearing
+                notes_content = notes_text.get("1.0", tk.END).strip()
+                notes_value = notes_content if notes_content else None
+                
                 # Update order with enhanced method
                 success = self.db.update_pipe_order_enhanced(
                     order_id=order_id,
@@ -1999,7 +2003,7 @@ class StructureManagementApp:
                     order_date=order_date,
                     expected_delivery_date=expected_date,
                     actual_delivery_date=actual_date,
-                    notes=notes_text.get("1.0", tk.END).strip()
+                    notes=notes_value  # Changed from .strip() to notes_value
                 )
                 
                 if success:
@@ -2019,11 +2023,6 @@ class StructureManagementApp:
             
             except ValueError as e:
                 Messagebox.show_error("Invalid date format. Please use MM/DD/YYYY", "Date Error")
-            except Exception as e:
-                Messagebox.show_error(f"An error occurred: {str(e)}", "Error")
-        
-        ttk.Button(button_frame, text="Save Changes", bootstyle="primary", command=save_changes).pack(side="left", padx=5)
-        ttk.Button(button_frame, text="Cancel", bootstyle="secondary", command=edit_window.destroy).pack(side="right", padx=5)
 
     def show_status_toast(self, message, duration=2000):
         """Show a brief status toast notification"""
@@ -2033,29 +2032,73 @@ class StructureManagementApp:
             toast.overrideredirect(True)  # No window decorations
             toast.attributes('-topmost', True)  # Stay on top
             
-            # Position at the bottom right of the main window
-            x = self.root.winfo_x() + self.root.winfo_width() - 300
-            y = self.root.winfo_y() + self.root.winfo_height() - 100
-            toast.geometry(f"280x60+{x}+{y}")
+            # Calculation that accounts for window borders and taskbar
+            # Get the actual visible area of the main window
+            main_x = self.root.winfo_x()
+            main_y = self.root.winfo_y()
+            main_width = self.root.winfo_width()
+            main_height = self.root.winfo_height()
             
-            # Toast content with modern styling
-            toast_frame = ttk.Frame(toast, padding=15, bootstyle="success")
+            # Toast dimensions and positioning
+            toast_width = 320
+            toast_height = 80
+            
+            # Position at bottom right with proper margins
+            x = main_x + main_width - toast_width - 20  # 20px margin from right edge
+            y = main_y + main_height - toast_height - 60  # 60px margin from bottom (accounts for taskbar)
+            
+            toast.geometry(f"{toast_width}x{toast_height}+{x}+{y}")
+            
+            # Styling and layout for the toast content
+            toast_frame = ttk.Frame(toast, padding=10, bootstyle="success")
             toast_frame.pack(fill="both", expand=True)
             
-            # Message
-            ttk.Label(
+            # Text wrapping and sizing
+            message_label = ttk.Label(
                 toast_frame,
                 text=message,
-                font=("Helvetica", 11),
-                bootstyle="success",
-                wraplength=250
-            ).pack()
+                font=("Helvetica", 10),
+                bootstyle="success-inverse",  # White text on success background
+                wraplength=280,  # Proper wrap length for the toast width
+                justify="center"
+            )
+            message_label.pack(expand=True)
+            
+            # Ensure the toast updates and displays properly
+            toast.update_idletasks()
+            
+            # Add fade-in effect
+            toast.attributes('-alpha', 0.0)
+            toast.update()
+            
+            def fade_in():
+                current_alpha = toast.attributes('-alpha')
+                if current_alpha < 0.9:
+                    toast.attributes('-alpha', current_alpha + 0.1)
+                    toast.after(50, fade_in)
+            
+            fade_in()
+            
+            # Auto-close with fade-out
+            def fade_out_and_destroy():
+                try:
+                    def fade_out():
+                        current_alpha = toast.attributes('-alpha')
+                        if current_alpha > 0.1:
+                            toast.attributes('-alpha', current_alpha - 0.1)
+                            toast.after(50, fade_out)
+                        else:
+                            toast.destroy()
+                    fade_out()
+                except:
+                    # If toast is already destroyed, ignore the error
+                    pass
             
             # Auto-close after specified duration
-            toast.after(duration, toast.destroy)
+            toast.after(duration, fade_out_and_destroy)
             
         except Exception as e:
-            # Fallback to console if toast fails
+            # Fallback logging
             self.logger.info(f"Status: {message}")
             print(f"Status: {message}")
 
@@ -2636,7 +2679,7 @@ class StructureManagementApp:
         for i, component in enumerate(components):
             print(f"DEBUG: Processing component {i}: {component.component_type_name} - {component.status}")
             
-            # Format dates for display - FIXED FORMAT
+            # Format dates for display 
             order_date = component.order_date.strftime("%m/%d/%Y") if component.order_date else "—"
             expected_date = component.expected_delivery_date.strftime("%m/%d/%Y") if component.expected_delivery_date else "—"
             delivery_date = component.actual_delivery_date.strftime("%m/%d/%Y") if component.actual_delivery_date else "—"
@@ -4371,7 +4414,7 @@ class StructureManagementApp:
                     Messagebox.show_error("Invalid component type", "Validation Error")
                     return
                 
-                # Parse dates - Fixed to be more robust
+                # Parse dates 
                 order_date = None
                 expected_date = None
                 actual_date = None
@@ -4790,16 +4833,17 @@ class StructureManagementApp:
                             return
                     
                     # Get notes
-                    notes = notes_text.get("1.0", tk.END).strip()
+                    notes_content = notes_text.get("1.0", tk.END).strip()
+                    notes_value = notes_content if notes_content else None
                     
                     # Update the item
                     success = self.db.update_pipe_item_delivery_enhanced(
                         item_id=item_id,
                         delivered_length=delivered_length,
                         status=status_var.get(),
-                        notes=notes if notes else None,
+                        notes=notes_value,  
                         delivery_date=delivery_date,
-                        update_notes=True
+                        update_notes=True  
                     )
                     
                     if success:
@@ -5363,8 +5407,9 @@ class StructureManagementApp:
                 order_number = order_number_entry.get().strip()
                 supplier = supplier_entry.get().strip()
                 delivery_date_str = delivery_date_entry.get().strip()
-                notes = notes_text.get("1.0", tk.END).strip()
-                
+                notes_content = notes_text.get("1.0", tk.END).strip()
+                notes_value = notes_content if notes_content else None
+
                 # Validation
                 if not order_number:
                     Messagebox.show_error("Please enter an order number", "Validation Error")
@@ -5390,8 +5435,8 @@ class StructureManagementApp:
                     order_number=order_number,
                     supplier=supplier,
                     expected_delivery_date=delivery_date,
-                    notes=notes,
-                    pipe_groups=None,  # No initial pipe groups
+                    notes=notes_value,
+                    pipe_groups=None,
                     project_id=project.id
                 )
                 
@@ -5738,7 +5783,7 @@ class StructureManagementApp:
             # Create notes dialog
             notes_window = ttk.Toplevel(self.root)
             notes_window.title("Pipe Item Notes")
-            notes_window.geometry("600x500")
+            notes_window.geometry("500x615")
             notes_window.transient(self.root)
             notes_window.grab_set()
             
@@ -5773,17 +5818,17 @@ class StructureManagementApp:
             
             # Notes section
             notes_frame = ttk.Labelframe(main_frame, text="Notes", padding=10)
-            notes_frame.pack(fill="both", expand=True, pady=(0, 20))
+            notes_frame.pack(fill="x", pady=(0, 15))
             
             # Notes text area with scrollbar
             notes_container = ttk.Frame(notes_frame)
-            notes_container.pack(fill="both", expand=True)
+            notes_container.pack(fill="x")
             
-            notes_text = tk.Text(notes_container, wrap="word", font=("Helvetica", 11))
+            notes_text = tk.Text(notes_container, wrap="word", font=("Helvetica", 11), height=8)
             notes_scrollbar = ttk.Scrollbar(notes_container, orient="vertical", command=notes_text.yview)
             notes_text.configure(yscrollcommand=notes_scrollbar.set)
             
-            notes_text.pack(side="left", fill="both", expand=True)
+            notes_text.pack(side="left", fill="x", expand=True)
             notes_scrollbar.pack(side="right", fill="y")
             
             # Pre-fill with existing notes
@@ -5851,17 +5896,17 @@ class StructureManagementApp:
                 command=add_timestamp
             ).pack(side="left")
             
-            def save_notes():
+            def save_notes():  
                 try:
                     notes = notes_text.get("1.0", tk.END).strip()
                     
                     # Convert empty string to None to properly clear notes in database
                     notes_value = notes if notes else None
-                    
-                    # Update pipe item notes
+
                     success = self.db.update_pipe_item_delivery_enhanced(
                         item_id=item_id,
-                        notes=notes_value
+                        notes=notes_value,
+                        update_notes=True  
                     )
                     
                     if success:

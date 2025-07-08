@@ -1911,6 +1911,7 @@ class DatabaseManager:
                 expected_date_str = expected_delivery_date.isoformat() if expected_delivery_date else None
                 delivery_date_str = actual_delivery_date.isoformat() if actual_delivery_date else None
                 
+                # Always update notes field, even when None (to clear notes)
                 cursor.execute('''
                     UPDATE pipe_orders SET
                         status = ?,
