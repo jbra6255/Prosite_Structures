@@ -763,10 +763,12 @@ class StructureManagementApp:
         
         ttk.Label(filter_frame, text="Filter:").grid(row=0, column=0, padx=(0, 5), sticky="w")
         self.component_filter_var = tk.StringVar(value="All Structures")
-        filter_combo = ttk.Combobox(
+        
+        # Updated filter options to include new statuses
+        filter_combo = ttk.Combobox( # noqa: F841
             filter_frame, 
             textvariable=self.component_filter_var, 
-            values=["All Structures", "Complete", "Incomplete", "Not Started", "In Progress"],
+            values=["All Structures", "Installed", "Delivered", "Incomplete", "Not Started", "In Progress"],
             state="readonly"
         )
         filter_combo.grid(row=0, column=1, sticky="ew")
@@ -798,11 +800,12 @@ class StructureManagementApp:
         self.component_structure_tree.column("STATUS", width=100, anchor="center")
         self.component_structure_tree.column("PROGRESS", width=80, anchor="center")
         
-        # Configure status tags for color coding
-        self.component_structure_tree.tag_configure("complete", background="#d4edda", foreground="#155724")
-        self.component_structure_tree.tag_configure("in_progress", background="#fff3cd", foreground="#856404")
-        self.component_structure_tree.tag_configure("not_started", background="#f8d7da", foreground="#721c24")
-        self.component_structure_tree.tag_configure("incomplete", background="#cce7ff", foreground="#004085")
+        # Configure status tags for color coding - including new tags
+        self.component_structure_tree.tag_configure("installed", background="#c3e6cb", foreground="#155724")  # Vibrant Green
+        self.component_structure_tree.tag_configure("delivered", background="#b8daff", foreground="#004085")  # Vibrant Blue
+        self.component_structure_tree.tag_configure("in_progress", background="#ffeeba", foreground="#856404") # Vibrant Yellow
+        self.component_structure_tree.tag_configure("not_started", background="#f5c6cb", foreground="#721c24") # Vibrant Red
+        self.component_structure_tree.tag_configure("incomplete", background="#d6d8db", foreground="#383d41")  # Clear Grey
         
         # Add scrollbar
         structure_scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=self.component_structure_tree.yview)
@@ -2551,13 +2554,16 @@ class StructureManagementApp:
             try:
                 status_info = self.calculate_structure_component_status(structure.structure_id, project.id)
                 
-                # Determine status tag
+                # Determine status tag with new logic
                 if status_info['total'] == 0:
                     tag = "not_started"
                     status_text = "Not Started"
                 elif status_info['installed'] == status_info['total']:
-                    tag = "complete"
-                    status_text = "Complete"
+                    tag = "installed"  # New tag for installed
+                    status_text = "Installed"
+                elif status_info['delivered'] == status_info['total']:
+                    tag = "delivered"  # New tag for delivered
+                    status_text = "Delivered"
                 elif status_info['delivered'] + status_info['installed'] > 0:
                     tag = "in_progress"
                     status_text = "In Progress"
@@ -4170,8 +4176,10 @@ class StructureManagementApp:
             
             if filter_value == "All Structures":
                 show_structure = True
-            elif filter_value == "Complete" and status_info['total'] > 0:
+            elif filter_value == "Installed" and status_info['total'] > 0:
                 show_structure = (status_info['installed'] == status_info['total'])
+            elif filter_value == "Delivered" and status_info['total'] > 0:
+                show_structure = (status_info['delivered'] == status_info['total'] and status_info['installed'] < status_info['total'])
             elif filter_value == "Not Started":
                 show_structure = (status_info['total'] == 0)
             elif filter_value == "In Progress" and status_info['total'] > 0:
@@ -4180,13 +4188,16 @@ class StructureManagementApp:
                 show_structure = (status_info['delivered'] + status_info['installed'] < status_info['total'])
             
             if show_structure:
-                # Determine status and tag
+                # Determine status and tag with new logic
                 if status_info['total'] == 0:
                     tag = "not_started"
                     status_text = "Not Started"
                 elif status_info['installed'] == status_info['total']:
-                    tag = "complete"
-                    status_text = "Complete"
+                    tag = "installed"
+                    status_text = "Installed"
+                elif status_info['delivered'] == status_info['total']:
+                    tag = "delivered"
+                    status_text = "Delivered"
                 elif status_info['delivered'] + status_info['installed'] > 0:
                     tag = "in_progress"
                     status_text = "In Progress"
