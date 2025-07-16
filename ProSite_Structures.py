@@ -1264,7 +1264,7 @@ class StructureManagementApp:
             
             for structure in structures_with_pipe:
                 # Create key for grouping
-                key = f"{structure.pipe_type}_{int(structure.pipe_diameter) if structure.pipe_diameter else 'unknown'}"
+                key = f"{structure.pipe_type}_{int(structure.pipe_diameter) if structure.pipe_diameter is not None else 'unknown'}"
                 
                 if key not in pipe_totals:
                     pipe_totals[key] = {
@@ -1310,7 +1310,7 @@ class StructureManagementApp:
                         diameter = item.get('diameter', 0)
                         
                         # Update delivered amounts in pipe_totals
-                        key = f"{pipe_type}_{int(diameter) if diameter else 'unknown'}"
+                        key = f"{pipe_type}_{int(diameter) if diameter is not None else 'unknown'}"
                         if key in pipe_totals:
                             pipe_totals[key]['delivered_length'] += delivered_length
                         
@@ -2105,6 +2105,38 @@ class StructureManagementApp:
             self.logger.info(f"Status: {message}")
             print(f"Status: {message}")
 
+    def check_and_update_order_status(self, order_id: int):
+        """Check if all items in an order are delivered and update the order status if so."""
+        try:
+            # Get all items for the order
+            order_items = self.db.get_pipe_order_items(order_id)
+            if not order_items:
+                return  # No items, nothing to do
+
+            # Check if all items are delivered
+            all_delivered = all(item.get('status', '').lower() == 'delivered' for item in order_items)
+
+            if all_delivered:
+                # Get order details to check if it's not already marked as delivered
+                order_details = self.db.get_pipe_order_details(order_id)
+                if order_details and order_details.get('status') != 'delivered':
+                    order_number = order_details.get('order_number', f"ID {order_id}")
+                    self.logger.info(f"All items for order {order_number} are delivered. Updating order status.")
+                    
+                    # Update the order status to 'delivered'
+                    success = self.db.update_pipe_order_status(
+                        order_id,
+                        status='delivered',
+                        delivery_date=datetime.now(),
+                        notes=f"Auto-updated: all items delivered as of {datetime.now().strftime('%Y-%m-%d')}"
+                    )
+                    if success:
+                        self.refresh_pipe_orders()
+                        self.show_status_toast(f"Order '{order_number}' completed!")
+
+        except Exception as e:
+            self.logger.error(f"Error checking and updating order status for order ID {order_id}: {e}", exc_info=True)
+
     def quick_mark_pipe_item_delivered(self, item_id: int, structure_id: str):
         """Quickly mark a pipe item as fully delivered"""
         try:
@@ -2158,6 +2190,10 @@ class StructureManagementApp:
                 if self.pipe_orders_tree.selection():
                     order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
                     self.load_order_breakdown(order_number)
+                
+                # Check if this completes the order
+                if order_id:
+                    self.check_and_update_order_status(order_id)
             else:
                 Messagebox.show_error("Failed to update delivery", "Error")
                 
@@ -6590,6 +6626,7 @@ class StructureManagementApp:
             print(f"ERROR: Failed to refresh structure tree: {e}")
 
     def add_component(self):
+
         """Add a new component to the selected structure"""
         # Get selected structure
         selection = self.component_structure_tree.selection()
@@ -8179,7 +8216,7 @@ class StructureManagementApp:
                 else:
                     message = f"Structure {structure_id} added successfully (base component could not be auto-added)"
                 
-                Messagebox.show_info(message, "Success")
+                self.show_status_toast(message)
                 
                 # Clear form fields
                 self.clear_structure_form()
@@ -8235,7 +8272,7 @@ class StructureManagementApp:
         success = self.db.delete_structure(structure_id, project.id)
         
         if success:
-            Messagebox.show_info(f"Structure {structure_id} deleted successfully", "Success")
+            self.show_status_toast(f"Structure {structure_id} deleted successfully")
             # Remove from treeview
             self.structure_tree.delete(selection[0])
         else:
@@ -8622,7 +8659,7 @@ class StructureManagementApp:
             success = self.db.update_structure(updated_structure, project.id)
             
             if success:
-                Messagebox.show_info(f"Structure {structure_id} updated successfully", "Success")
+                self.show_status_toast(f"Structure {structure_id} updated successfully")
                 
                 # Update in treeview
                 for item in self.structure_tree.get_children():
@@ -8632,6 +8669,9 @@ class StructureManagementApp:
                         
                 # Refresh structure list
                 self.load_structures()
+                
+                # Refresh pipe totals summary to reflect any changes in pipe length
+                self.calculate_project_pipe_totals()
             else:
                 Messagebox.show_error("Failed to update structure", "Database Error")
                 
