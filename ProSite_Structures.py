@@ -39,6 +39,27 @@ class StructureManagementApp:
         # Start with login screen
         self.show_login_screen()
 
+    def center_toplevel(self, toplevel: ttk.Toplevel):
+        """Centers a toplevel window relative to the main application window."""
+        toplevel.update_idletasks() # Process geometry strings and widget sizes
+
+        # Get Toplevel window size
+        width = toplevel.winfo_width()
+        height = toplevel.winfo_height()
+
+        # Get main window position and size
+        main_x = self.root.winfo_x()
+        main_y = self.root.winfo_y()
+        main_width = self.root.winfo_width()
+        main_height = self.root.winfo_height()
+
+        # Calculate position for the center
+        x = main_x + (main_width // 2) - (width // 2)
+        y = main_y + (main_height // 2) - (height // 2)
+
+        # Set the new position, keeping the original size
+        toplevel.geometry(f"{width}x{height}+{int(x)}+{int(y)}")
+
     def show_login_screen(self):
         """Display the login screen with ttkbootstrap styling"""
         # Clear existing widgets
@@ -118,7 +139,7 @@ class StructureManagementApp:
     def show_register_screen(self):
         register_window = ttk.Toplevel(self.root)
         register_window.title("Create Your Account")
-        register_window.geometry("400x400")
+        self.center_toplevel(register_window)
         
         # Add padding around the entire content
         main_frame = ttk.Frame(register_window, padding=20)
@@ -1431,6 +1452,7 @@ class StructureManagementApp:
         confirm_window = ttk.Toplevel(self.root)
         confirm_window.title("Confirm Delete Pipe Order")
         confirm_window.geometry("505x490")
+        self.center_toplevel(confirm_window)
         confirm_window.transient(self.root)
         confirm_window.grab_set()
         
@@ -1836,6 +1858,7 @@ class StructureManagementApp:
         edit_window = ttk.Toplevel(self.root)
         edit_window.title("Edit Pipe Order")
         edit_window.geometry("520x650")
+        self.center_toplevel(edit_window)
         edit_window.transient(self.root)
         edit_window.grab_set()
         
@@ -2356,6 +2379,7 @@ class StructureManagementApp:
             delivery_window = ttk.Toplevel(self.root)
             delivery_window.title("Partial Delivery")
             delivery_window.geometry("450x500")
+            self.center_toplevel(delivery_window)
             delivery_window.transient(self.root)
             delivery_window.grab_set()
             
@@ -3088,6 +3112,7 @@ class StructureManagementApp:
         results_window = ttk.Toplevel(self.root)
         results_window.title("Pipe Totals Calculation")
         results_window.geometry("700x500")
+        self.center_toplevel(results_window)
         results_window.transient(self.root)
         results_window.grab_set()
         
@@ -3246,6 +3271,7 @@ class StructureManagementApp:
         order_window = ttk.Toplevel(self.root)
         order_window.title("Create Pipe Order")
         order_window.geometry("600x700")
+        self.center_toplevel(order_window)
         order_window.transient(self.root)
         order_window.grab_set()
         
@@ -3453,6 +3479,7 @@ class StructureManagementApp:
         details_window = ttk.Toplevel(self.root)
         details_window.title("Pipe Details for Selected Structures")
         details_window.geometry("900x600")
+        self.center_toplevel(details_window)
         details_window.transient(self.root)
         
         # Main container
@@ -3811,10 +3838,8 @@ class StructureManagementApp:
             date_window.grab_set()
             date_window.resizable(False, False)
             date_window.minsize(350, 370)
-            
-            # Center the window
-            date_window.geometry("+%d+%d" % (self.root.winfo_rootx() + 50, self.root.winfo_rooty() + 50))
-            
+
+            self.center_toplevel(date_window)            
             # Main frame
             main_frame = ttk.Frame(date_window, padding=10)
             main_frame.pack(fill="both", expand=True)
@@ -4023,6 +4048,7 @@ class StructureManagementApp:
         update_window = ttk.Toplevel(self.root)
         update_window.title("Update Component Status")
         update_window.geometry("505x725")
+        self.center_toplevel(update_window)
         update_window.transient(self.root)
         update_window.grab_set()
         
@@ -4270,6 +4296,7 @@ class StructureManagementApp:
         component_window = ttk.Toplevel(self.root)
         component_window.title("Add Component")
         component_window.geometry("470x760")
+        self.center_toplevel(component_window)
         component_window.transient(self.root)
         component_window.grab_set()
         
@@ -4549,6 +4576,7 @@ class StructureManagementApp:
         bulk_window = ttk.Toplevel(self.root)
         bulk_window.title("Bulk Update Components")
         bulk_window.geometry("600x500")
+        self.center_toplevel(bulk_window)
         bulk_window.transient(self.root)
         bulk_window.grab_set()
         
@@ -4766,6 +4794,7 @@ class StructureManagementApp:
             edit_window = ttk.Toplevel(self.root)
             edit_window.title("Edit Pipe Item")
             edit_window.geometry("500x600")
+            self.center_toplevel(edit_window)
             edit_window.transient(self.root)
             edit_window.grab_set()
             
@@ -4991,6 +5020,7 @@ class StructureManagementApp:
         report_window = ttk.Toplevel(self.root)
         report_window.title(f"Delivery Report: {self.current_project}")
         report_window.geometry("900x700")
+        self.cente_toplevel(report_window)
         
         # Main container
         main_frame = ttk.Frame(report_window, padding=20)
@@ -5116,7 +5146,7 @@ class StructureManagementApp:
             button_frame, 
             text="Export to CSV", 
             bootstyle="success",
-            command=lambda: Messagebox.show_info("CSV export coming soon", "Feature Coming Soon")
+            command=lambda: self.export_component_status_csv(components, report_tree)
         ).pack(side="left", padx=5)
         
         ttk.Button(
@@ -5376,6 +5406,7 @@ class StructureManagementApp:
         order_window = ttk.Toplevel(self.root)
         order_window.title("Create New Pipe Order")
         order_window.geometry("500x400")
+        self.center_toplevel(order_window)
         order_window.transient(self.root)
         order_window.grab_set()
         
@@ -5555,6 +5586,7 @@ class StructureManagementApp:
         status_window = ttk.Toplevel(self.root)
         status_window.title("Update Order Status")
         status_window.geometry("450x350")
+        self.center_toplevel(status_window)
         status_window.transient(self.root)
         status_window.grab_set()
         
@@ -5708,6 +5740,7 @@ class StructureManagementApp:
         delivery_window = ttk.Toplevel(self.root)
         delivery_window.title("Mark Pipe as Delivered")
         delivery_window.geometry("403x403")
+        self.center_toplevel(delivery_window)
         delivery_window.transient(self.root)
         delivery_window.grab_set()
         
@@ -5831,6 +5864,7 @@ class StructureManagementApp:
             notes_window = ttk.Toplevel(self.root)
             notes_window.title("Pipe Item Notes")
             notes_window.geometry("500x615")
+            self.center_toplevel(notes_window)
             notes_window.transient(self.root)
             notes_window.grab_set()
             
@@ -6015,6 +6049,7 @@ class StructureManagementApp:
         report_window = ttk.Toplevel(self.root)
         report_window.title(f"Pipe Delivery Report: {self.current_project}")
         report_window.geometry("1000x700")
+        self.center_toplevel(report_window)
         
         # Main container
         main_frame = ttk.Frame(report_window, padding=20)
@@ -6147,90 +6182,84 @@ class StructureManagementApp:
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(fill="x", pady=(20, 0))
         
-        def export_csv():
-            try:
-                import csv
-                from tkinter import filedialog
-                
-                # Ask user for save location
-                file_path = filedialog.asksaveasfilename(
-                    title="Save Pipe Delivery Report",
-                    defaultextension=".csv",
-                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-                    initialvalue=f"pipe_delivery_report_{self.current_project}_{datetime.now().strftime('%Y%m%d')}.csv"
-                )
-                
-                if file_path:
-                    with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
-                        writer = csv.writer(csvfile)
-                        
-                        # Write header
-                        writer.writerow(["Order #", "Supplier", "Pipe Type", "Diameter", "Length (ft)", 
-                                    "Status", "Order Date", "Expected", "Delivered"])
-                        
-                        # Write data
-                        for order in pipe_orders:
-                            # Format dates for CSV
-                            order_date = ""
-                            if order.get('order_date'):
-                                try:
-                                    order_date = datetime.fromisoformat(order['order_date']).strftime("%m/%d/%Y")
-                                except:
-                                    order_date = str(order.get('order_date', ''))
-                            
-                            expected_date = ""
-                            if order.get('expected_delivery_date'):
-                                try:
-                                    expected_date = datetime.fromisoformat(order['expected_delivery_date']).strftime("%m/%d/%Y")
-                                except:
-                                    expected_date = str(order.get('expected_delivery_date', ''))
-                            
-                            delivered_date = ""
-                            if order.get('actual_delivery_date'):
-                                try:
-                                    delivered_date = datetime.fromisoformat(order['actual_delivery_date']).strftime("%m/%d/%Y")
-                                except:
-                                    delivered_date = str(order.get('actual_delivery_date', ''))
-                            
-                            writer.writerow([
-                                order.get('order_number', ''),
-                                order.get('supplier', ''),
-                                order.get('pipe_type', ''),
-                                order.get('diameter', ''),
-                                f"{order.get('total_length', 0):.2f}",
-                                order.get('status', '').title(),
-                                order_date,
-                                expected_date,
-                                delivered_date or "—"
-                            ])
-                    
-                    Messagebox.show_info(f"Report exported to {file_path}", "Export Successful")
+    def export_component_status_csv(self, components, report_tree):
+        """Export component status report to CSV"""
+        try:
+            import csv
+            from tkinter import filedialog
+            from datetime import datetime
             
-            except Exception as e:
-                self.logger.error(f"Error exporting CSV: {e}", exc_info=True)
-                Messagebox.show_error(f"Failed to export CSV: {str(e)}", "Export Error")
-        
-        ttk.Button(
-            button_frame, 
-            text="Export to CSV", 
-            bootstyle="success",
-            command=export_csv
-        ).pack(side="left", padx=5)
-        
-        ttk.Button(
-            button_frame, 
-            text="Print Report", 
-            bootstyle="info",
-            command=lambda: Messagebox.show_info("Print functionality would open system print dialog", "Print")
-        ).pack(side="left", padx=5)
-        
-        ttk.Button(
-            button_frame, 
-            text="Close", 
-            bootstyle="secondary",
-            command=report_window.destroy
-        ).pack(side="right", padx=5)
-
+            # Ask user for save location
+            file_path = filedialog.asksaveasfilename(
+                title="Save Component Status Report",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialvalue=f"component_status_{self.current_project}_{datetime.now().strftime('%Y%m%d')}.csv"
+            )
+            
+            if file_path:
+                with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Write header with project info
+                    writer.writerow([f"Component Status Report - Project: {self.current_project}"])
+                    writer.writerow([f"Generated: {datetime.now().strftime('%m/%d/%Y %H:%M')}"])
+                    writer.writerow([])  # Empty row
+                    
+                    # Write column headers
+                    writer.writerow([
+                        "Structure ID",
+                        "Component Type", 
+                        "Status",
+                        "Order Date",
+                        "Expected Delivery",
+                        "Actual Delivery",
+                        "Notes"
+                    ])
+                    
+                    # Calculate status counts for summary
+                    status_counts = {"pending": 0, "ordered": 0, "approved": 0, "delivered": 0, "installed": 0}
+                    
+                    # Write component data
+                    for item in report_tree.get_children():
+                        values = report_tree.item(item, "values")
+                        if values:  # Ensure we have values
+                            writer.writerow(values)
+                            
+                            # Count status for summary (assuming status is in column 2)
+                            if len(values) > 2:
+                                status = values[2].lower()
+                                if status in status_counts:
+                                    status_counts[status] += 1
+                    
+                    # Write summary section
+                    writer.writerow([])  # Empty row
+                    writer.writerow(["Summary:"])
+                    
+                    # Calculate delivery performance
+                    on_time_count = 0
+                    late_count = 0 
+                    pending_count = 0
+                    
+                    for component in components:
+                        if component.status == "delivered" and component.expected_delivery_date and component.actual_delivery_date:
+                            if component.actual_delivery_date <= component.expected_delivery_date:
+                                on_time_count += 1
+                            else:
+                                late_count += 1
+                        elif component.status in ["pending", "ordered", "approved"]:
+                            pending_count += 1
+                    
+                    writer.writerow(["Delivered On Time:", on_time_count])
+                    writer.writerow(["Delivered Late:", late_count])
+                    writer.writerow(["Pending Delivery:", pending_count])
+                    
+                    # Success message
+                    Messagebox.show_info(f"Component status report exported to {file_path}", "Export Successful")
+            
+        except Exception as e:
+            self.logger.error(f"Error exporting component status CSV: {e}", exc_info=True)
+            Messagebox.show_error(f"Failed to export CSV: {str(e)}", "Export Error")
 
     def view_structure_from_pipe_item_enhanced(self, structure_id: str):
         """Enhanced structure navigation with better feedback"""
@@ -6375,6 +6404,7 @@ class StructureManagementApp:
         order_window = ttk.Toplevel(self.root)
         order_window.title("Create Order from Totals")
         order_window.geometry("600x500")
+        self.center_toplevel(order_window)
         order_window.transient(self.root)
         order_window.grab_set()
         
@@ -6645,6 +6675,7 @@ class StructureManagementApp:
         component_window = ttk.Toplevel(self.root)
         component_window.title("Add Component")
         component_window.geometry("400x450")
+        self.center_toplevel(component_window)
         
         # Add padding around the entire content
         main_frame = ttk.Frame(component_window, padding=20)
@@ -6817,6 +6848,7 @@ class StructureManagementApp:
         update_window = ttk.Toplevel(self.root)
         update_window.title("Update Component Status")
         update_window.geometry("400x300")
+        self.center_toplevel(update_window)
         
         # Add padding around the entire content
         main_frame = ttk.Frame(update_window, padding=20)
@@ -6984,6 +7016,7 @@ class StructureManagementApp:
         report_window = ttk.Toplevel(self.root)
         report_window.title(f"Component Report: {structure_id}")
         report_window.geometry("700x500")
+        self.center_toplevel(report_window)
         
         # Main container with padding
         main_frame = ttk.Frame(report_window, padding=20)
@@ -7129,6 +7162,7 @@ class StructureManagementApp:
         rename_window = ttk.Toplevel(self.root)
         rename_window.title("Rename Structure")
         rename_window.geometry("450x300")
+        self.center_toplevel(rename_window)
         rename_window.resizable(False, False)
         
         # Center the window
@@ -7308,6 +7342,7 @@ class StructureManagementApp:
             group_window = ttk.Toplevel(self.root)
             group_window.title("Manage Structure Groups")
             group_window.geometry("700x500")
+            self.center_toplevel(group_window)
             
             # Main container with padding
             main_frame = ttk.Frame(group_window, padding=20)
@@ -7449,6 +7484,7 @@ class StructureManagementApp:
         view_window = ttk.Toplevel(self.root)
         view_window.title(f"Group: {group_name}")
         view_window.geometry("900x500")  # Made wider for new columns
+        self.center_toplevel(view_window)
         
         # Main container with padding
         main_frame = ttk.Frame(view_window, padding=20)
@@ -7599,6 +7635,7 @@ class StructureManagementApp:
         results_window = ttk.Toplevel(self.root)
         results_window.title("Search Results")
         results_window.geometry("500x400")
+        self.center_toplevel(results_window)
         
         # Main container with padding
         main_frame = ttk.Frame(results_window, padding=20)
@@ -7734,6 +7771,7 @@ class StructureManagementApp:
         pref_window = ttk.Toplevel(self.root)
         pref_window.title("User Preferences")
         pref_window.geometry("600x500")
+        self.center_toplevel(pref_window)
         
         # Main container with padding
         main_frame = ttk.Frame(pref_window, padding=20)
@@ -8015,6 +8053,7 @@ class StructureManagementApp:
         about_window = ttk.Toplevel(self.root)
         about_window.title("About Structure Management System")
         about_window.geometry("400x300")
+        self.center_toplevel(about_window)
         
         # Add padding around the entire content
         main_frame = ttk.Frame(about_window, padding=20)
@@ -8062,6 +8101,7 @@ class StructureManagementApp:
         shortcuts_window = ttk.Toplevel(self.root)
         shortcuts_window.title("Keyboard Shortcuts")
         shortcuts_window.geometry("500x400")
+        self.center_toplevel(shortcuts_window)
         shortcuts_window.resizable(False, False)
         
         # Center the window
