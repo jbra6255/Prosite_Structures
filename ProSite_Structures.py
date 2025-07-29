@@ -1321,21 +1321,20 @@ class StructureManagementApp:
             pipe_orders = self.db.get_pipe_orders(project_id)
             
             for order in pipe_orders:
-                if order.get('status', '').lower() in ['delivered', 'in_transit']:
-                    # Get order items
-                    order_items = self.db.get_pipe_order_items(order.get('id'))
+                # Get order items regardless of order status, as items can be delivered partially
+                order_items = self.db.get_pipe_order_items(order.get('id'))
+                
+                for item in order_items:
+                    delivered_length = item.get('delivered_length', 0)
+                    pipe_type = item.get('pipe_type', '')
+                    diameter = item.get('diameter', 0)
                     
-                    for item in order_items:
-                        delivered_length = item.get('delivered_length', 0)
-                        pipe_type = item.get('pipe_type', '')
-                        diameter = item.get('diameter', 0)
-                        
-                        # Update delivered amounts in pipe_totals
-                        key = f"{pipe_type}_{int(diameter) if diameter is not None else 'unknown'}"
-                        if key in pipe_totals:
-                            pipe_totals[key]['delivered_length'] += delivered_length
-                        
-                        total_delivered += delivered_length
+                    # Update delivered amounts in pipe_totals
+                    key = f"{pipe_type}_{int(diameter) if diameter is not None else 'unknown'}"
+                    if key in pipe_totals:
+                        pipe_totals[key]['delivered_length'] += delivered_length
+                    
+                    total_delivered += delivered_length
             
             return total_delivered
             
@@ -2129,21 +2128,26 @@ class StructureManagementApp:
             print(f"Status: {message}")
 
     def check_and_update_order_status(self, order_id: int):
-        """Check if all items in an order are delivered and update the order status if so."""
+        """Check and update the parent order status based on its items' delivery statuses."""
         try:
             # Get all items for the order
             order_items = self.db.get_pipe_order_items(order_id)
             if not order_items:
                 return  # No items, nothing to do
 
+            # Get order details to check current status
+            order_details = self.db.get_pipe_order_details(order_id)
+            if not order_details:
+                return
+
+            order_number = order_details.get('order_number', f"ID {order_id}")
+
             # Check if all items are delivered
             all_delivered = all(item.get('status', '').lower() == 'delivered' for item in order_items)
 
             if all_delivered:
-                # Get order details to check if it's not already marked as delivered
-                order_details = self.db.get_pipe_order_details(order_id)
+                # If all items are delivered and order is not already marked as delivered
                 if order_details and order_details.get('status') != 'delivered':
-                    order_number = order_details.get('order_number', f"ID {order_id}")
                     self.logger.info(f"All items for order {order_number} are delivered. Updating order status.")
                     
                     # Update the order status to 'delivered'
@@ -2156,6 +2160,21 @@ class StructureManagementApp:
                     if success:
                         self.refresh_pipe_orders()
                         self.show_status_toast(f"Order '{order_number}' completed!")
+            else:
+                # If not all items are delivered, but the order is marked as 'delivered'
+                if order_details.get('status') == 'delivered':
+                    self.logger.info(f"Order {order_number} is no longer fully delivered. Reverting status.")
+                    
+                    # Revert status to 'ordered' and clear delivery date
+                    success = self.db.update_pipe_order_status(
+                        order_id,
+                        status='ordered',
+                        delivery_date=None,
+                        notes=f"Auto-updated: status reverted from 'delivered' on {datetime.now().strftime('%Y-%m-%d')}"
+                    )
+                    if success:
+                        self.refresh_pipe_orders()
+                        self.show_status_toast(f"Order '{order_number}' status reverted.")
 
         except Exception as e:
             self.logger.error(f"Error checking and updating order status for order ID {order_id}: {e}", exc_info=True)
@@ -2213,6 +2232,9 @@ class StructureManagementApp:
                 if self.pipe_orders_tree.selection():
                     order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
                     self.load_order_breakdown(order_number)
+                
+                # Refresh project totals
+                self.calculate_project_pipe_totals()
                 
                 # Check if this completes the order
                 if order_id:
@@ -2328,6 +2350,12 @@ class StructureManagementApp:
                     if self.pipe_orders_tree.selection():
                         order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
                         self.load_order_breakdown(order_number)
+
+                    # Refresh project totals
+                    self.calculate_project_pipe_totals()
+                    
+                    # Check if this completes the order
+                    self.check_and_update_order_status(order_id)
                 else:
                     Messagebox.show_error("Failed to update delivery", "Error")
                     
@@ -5736,6 +5764,18 @@ class StructureManagementApp:
             Messagebox.show_error("Invalid length value", "Error")
             return
         
+        # Get the order_id to check for completion later
+        order_id = None
+        if self.pipe_orders_tree.selection():
+            order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
+            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            if project:
+                pipe_orders = self.db.get_pipe_orders(project.id)
+                for order in pipe_orders:
+                    if order.get('order_number') == order_number:
+                        order_id = order.get('id')
+                        break
+        
         # Create delivery dialog
         delivery_window = ttk.Toplevel(self.root)
         delivery_window.title("Mark Pipe as Delivered")
@@ -5824,6 +5864,13 @@ class StructureManagementApp:
                     if self.pipe_orders_tree.selection():
                         order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
                         self.load_order_breakdown(order_number)
+
+                    # Refresh project totals
+                    self.calculate_project_pipe_totals()
+                    
+                    # Check if this completes the order
+                    if order_id:
+                        self.check_and_update_order_status(order_id)
                 else:
                     Messagebox.show_error("Failed to update delivery", "Error")
             
