@@ -8,9 +8,6 @@ from database_manager import DatabaseManager
 from typing import List, Dict, Optional
 from models import Structure, StructureGroup, StructureComponent
 
-# Debug output - can be removed in production
-print("DEBUG - Structure fields:", [field for field in dir(Structure) if not field.startswith('__')])
-
 
 class StructureManagementApp:
     def __init__(self, root):
@@ -31,10 +28,10 @@ class StructureManagementApp:
         self.current_project = None
         
         # Structure type options
-        self.structure_types = ['CB', 'JB', 'DI', 'HW', 'UGDS', 'NYLO']
+        self.structure_types = ['CB', 'JB', 'DI', 'HW', 'UGDS', 'NYLO', 'DBCB']
         
         # Pipe Sizes (Diameters)
-        self.pipe_sizes = ['12', '15', '18', '24', '30', '36', '42', '48', '54', '60', '66', '72']
+        self.pipe_sizes = ['4', '6', '8', '12', '15', '18', '24', '30', '36', '42', '48', '54', '60', '66', '72']
 
         # Start with login screen
         self.show_login_screen()
@@ -139,6 +136,7 @@ class StructureManagementApp:
     def show_register_screen(self):
         register_window = ttk.Toplevel(self.root)
         register_window.title("Create Your Account")
+        register_window.geometry("415x415")
         self.center_toplevel(register_window)
         
         # Add padding around the entire content
@@ -785,11 +783,11 @@ class StructureManagementApp:
         ttk.Label(filter_frame, text="Filter:").grid(row=0, column=0, padx=(0, 5), sticky="w")
         self.component_filter_var = tk.StringVar(value="All Structures")
         
-        # Updated filter options to include new statuses
-        filter_combo = ttk.Combobox( # noqa: F841
+        # Add "Approved" to filter options
+        filter_combo = ttk.Combobox(
             filter_frame, 
             textvariable=self.component_filter_var, 
-            values=["All Structures", "Installed", "Delivered", "Incomplete", "Not Started", "In Progress"],
+            values=["All Structures", "Installed", "Delivered", "Approved", "Incomplete", "Not Started", "In Progress"],
             state="readonly"
         )
         filter_combo.grid(row=0, column=1, sticky="ew")
@@ -821,9 +819,10 @@ class StructureManagementApp:
         self.component_structure_tree.column("STATUS", width=100, anchor="center")
         self.component_structure_tree.column("PROGRESS", width=80, anchor="center")
         
-        # Configure status tags for color coding - including new tags
+        # Configure status tags for color coding - including new "approved" tag
         self.component_structure_tree.tag_configure("installed", background="#c3e6cb", foreground="#155724")  # Vibrant Green
         self.component_structure_tree.tag_configure("delivered", background="#b8daff", foreground="#004085")  # Vibrant Blue
+        self.component_structure_tree.tag_configure("approved", background="#e2d7ff", foreground="#5a2d91")   # NEW: Purple for Approved
         self.component_structure_tree.tag_configure("in_progress", background="#ffeeba", foreground="#856404") # Vibrant Yellow
         self.component_structure_tree.tag_configure("not_started", background="#f5c6cb", foreground="#721c24") # Vibrant Red
         self.component_structure_tree.tag_configure("incomplete", background="#d6d8db", foreground="#383d41")  # Clear Grey
@@ -955,6 +954,7 @@ class StructureManagementApp:
         # Bind events
         self.component_structure_tree.bind('<<TreeviewSelect>>', self.on_structure_selected)
         self.component_tree.bind('<Button-3>', self.show_component_context_menu)  # Right-click only
+        self.component_structure_tree.bind('<Button-3>', self.show_structure_component_context_menu)
         
         # Load initial data
         self.load_structures_for_components()
@@ -1087,7 +1087,7 @@ class StructureManagementApp:
         orders_tree_frame.rowconfigure(0, weight=1)
         
         # Pipe orders treeview
-        columns = ("ORDER", "PIPE_TYPE", "DIAMETER", "TOTAL_LENGTH", "STATUS", "ORDER_DATE")
+        columns = ("ORDER", "PIPE_TYPE", "DIAMETER", "TOTAL_LENGTH", "STATUS", "ORDER_DATE", "DATE_DELIVERED")
         self.pipe_orders_tree = ttk.Treeview(
             orders_tree_frame,
             columns=columns,
@@ -1102,6 +1102,7 @@ class StructureManagementApp:
         self.pipe_orders_tree.heading("TOTAL_LENGTH", text="Total Length", anchor="center")
         self.pipe_orders_tree.heading("STATUS", text="Status", anchor="center")
         self.pipe_orders_tree.heading("ORDER_DATE", text="Order Date", anchor="center")
+        self.pipe_orders_tree.heading("DATE_DELIVERED", text="Date Delivered", anchor="center")
         
         self.pipe_orders_tree.column("ORDER", width=80, anchor="center")
         self.pipe_orders_tree.column("PIPE_TYPE", width=120, anchor="center")
@@ -1109,6 +1110,7 @@ class StructureManagementApp:
         self.pipe_orders_tree.column("TOTAL_LENGTH", width=100, anchor="center")
         self.pipe_orders_tree.column("STATUS", width=100, anchor="center")
         self.pipe_orders_tree.column("ORDER_DATE", width=100, anchor="center")
+        self.pipe_orders_tree.column("DATE_DELIVERED", width=120, anchor="center")
         
         # Configure status tags for color coding
         self.pipe_orders_tree.tag_configure("pending", background="#fff3cd", foreground="#856404")
@@ -1145,7 +1147,7 @@ class StructureManagementApp:
         ttk.Button(
             orders_action_frame,
             text="Refresh",
-            bootstyle="secondary-outline",
+            bootstyle="secondary-outline",   
             command=self.refresh_pipe_orders
         ).pack(side="right", padx=2)
 
@@ -1669,6 +1671,8 @@ class StructureManagementApp:
             context_menu.tk_popup(event.x_root, event.y_root)
         finally:
             context_menu.grab_release()
+
+
 
     def quick_update_pipe_order_status(self, new_status):
         """Quickly update pipe order status from context menu"""
@@ -2627,9 +2631,41 @@ class StructureManagementApp:
             print("DEBUG: No structures found, returning early")
             return
         
-        # Print first few structure details for debugging
-        for i, structure in enumerate(structures[:3]):
-            print(f"DEBUG: Structure {i}: {structure.structure_id} - {structure.structure_type}")
+        # Pipe Totals Calculation
+        pipe_totals = {}
+        structures_with_pipe = [s for s in structures if s.pipe_length and s.pipe_diameter and s.pipe_type]
+        
+        if structures_with_pipe:
+            for structure in structures_with_pipe:
+                # Create key for grouping by type and diameter
+                key = f"{structure.pipe_type}_{int(structure.pipe_diameter) if structure.pipe_diameter is not None else 'unknown'}"
+                
+                if key not in pipe_totals:
+                    pipe_totals[key] = {
+                        'pipe_type': structure.pipe_type,
+                        'diameter': structure.pipe_diameter,
+                        'total_length': 0,
+                        'structures': []
+                    }
+                
+                pipe_totals[key]['total_length'] += structure.pipe_length
+                pipe_totals[key]['structures'].append(structure.structure_id)
+
+        # Delivered Pipe Calculation
+        total_delivered_length = 0
+        pipe_orders = self.db.get_pipe_orders(project.id)
+        for order in pipe_orders:
+            order_items = self.db.get_pipe_order_items(order.get('id'))
+            for item in order_items:
+                delivered_length = item.get('delivered_length', 0)
+                pipe_type = item.get('pipe_type', '')
+                diameter = item.get('diameter', 0)
+                
+                key = f"{pipe_type}_{int(diameter) if diameter is not None else 'unknown'}"
+                if key in pipe_totals:
+                    # Add delivered length to our totals dictionary
+                    pipe_totals[key]['delivered_length'] = pipe_totals[key].get('delivered_length', 0) + delivered_length
+                total_delivered_length += delivered_length
         
         # Ensure all structures have base components (safety check)
         if structures:
@@ -2642,16 +2678,19 @@ class StructureManagementApp:
             try:
                 status_info = self.calculate_structure_component_status(structure.structure_id, project.id)
                 
-                # Determine status tag with new logic
+                # Determine status tag with new approved logic
                 if status_info['total'] == 0:
                     tag = "not_started"
                     status_text = "Not Started"
                 elif status_info['installed'] == status_info['total']:
-                    tag = "installed"  # New tag for installed
+                    tag = "installed"
                     status_text = "Installed"
                 elif status_info['delivered'] == status_info['total']:
-                    tag = "delivered"  # New tag for delivered
+                    tag = "delivered"
                     status_text = "Delivered"
+                elif status_info['approved'] == status_info['total']:
+                    tag = "approved"
+                    status_text = "Approved"
                 elif status_info['delivered'] + status_info['installed'] > 0:
                     tag = "in_progress"
                     status_text = "In Progress"
@@ -2661,9 +2700,6 @@ class StructureManagementApp:
                 
                 progress_text = f"{status_info['delivered'] + status_info['installed']}/{status_info['total']}"
                 
-                # Debug: Print what we're adding
-                print(f"DEBUG: Adding structure {structure.structure_id} with status {status_text}")
-                
                 # Insert into treeview
                 item = self.component_structure_tree.insert(
                     "", 
@@ -2671,10 +2707,8 @@ class StructureManagementApp:
                     values=(structure.structure_id, structure.structure_type, status_text, progress_text),
                     tags=(tag,)
                 )
-                print(f"DEBUG: Successfully inserted item: {item}")
                 
             except Exception as e:
-                print(f"DEBUG: Error processing structure {structure.structure_id}: {e}")
                 import traceback
                 traceback.print_exc()
         
@@ -2683,7 +2717,7 @@ class StructureManagementApp:
         print(f"DEBUG: Component tree now has {len(children)} items")
         for child in children:
             values = self.component_structure_tree.item(child, "values")
-            print(f"DEBUG: Tree item: {values}")
+        #    print(f"DEBUG: Tree item: {values}")
 
     def calculate_structure_component_status(self, structure_id: str, project_id: int) -> dict:
         """Calculate component status for a structure"""
@@ -2707,11 +2741,9 @@ class StructureManagementApp:
                     # If status is unknown, count as pending
                     status_counts['pending'] += 1
             
-            print(f"DEBUG: Status for {structure_id}: {status_counts}")
             return status_counts
             
         except Exception as e:
-            print(f"DEBUG: Error calculating status for {structure_id}: {e}")
             return {
                 'total': 0,
                 'pending': 0,
@@ -2731,9 +2763,7 @@ class StructureManagementApp:
         
         structure_id = self.component_structure_tree.item(selection[0], "values")[0]
         structure_type = self.component_structure_tree.item(selection[0], "values")[1]
-        
-        print(f"DEBUG: Structure selected: {structure_id} ({structure_type})")
-        
+                
         # Update selected structure label
         self.selected_structure_label.config(text=f"{structure_id} ({structure_type})")
         
@@ -2742,7 +2772,6 @@ class StructureManagementApp:
 
     def load_structure_components_enhanced(self, structure_id: str):
         """Load components for the selected structure with enhanced display and proper date format"""
-        print(f"DEBUG: Loading components for structure {structure_id}")
         
         # Clear existing components
         for item in self.component_tree.get_children():
@@ -2751,15 +2780,12 @@ class StructureManagementApp:
         # Get project ID
         project = self.db.get_project_by_name(self.current_project, self.current_user.id)
         if not project:
-            print("DEBUG: No project found")
             return
         
         # Get components for this structure - USE ENHANCED METHOD
         components = self.db.get_structure_components_with_dates(structure_id, project.id)
-        print(f"DEBUG: Found {len(components)} components for structure {structure_id}")
         
         if not components:
-            print("DEBUG: No components found, adding a message row")
             # Add a message indicating no components
             self.component_tree.insert(
                 "",
@@ -2771,7 +2797,6 @@ class StructureManagementApp:
         
         # Add components to treeview with enhanced formatting
         for i, component in enumerate(components):
-            print(f"DEBUG: Processing component {i}: {component.component_type_name} - {component.status}")
             
             # Format dates for display 
             order_date = component.order_date.strftime("%m/%d/%Y") if component.order_date else "—"
@@ -2794,7 +2819,6 @@ class StructureManagementApp:
                 ),
                 tags=(str(component.id), status_tag)  # Store ID and status as tags
             )
-            print(f"DEBUG: Inserted component item: {item_id}")
 
     def clear_component_view(self):
         """Clear the component view when no structure is selected"""
@@ -3032,6 +3056,74 @@ class StructureManagementApp:
         finally:
             context_menu.grab_release()
 
+    def show_structure_component_context_menu(self, event):
+        """Show right-click context menu for the structure list in the component tab."""
+        # Get the item under the cursor
+        item = self.component_structure_tree.identify_row(event.y)
+        if not item:
+            return
+
+        # Select the item
+        self.component_structure_tree.selection_set(item)
+
+        # Get structure details
+        values = self.component_structure_tree.item(item, "values")
+        if not values:
+            return
+
+        structure_id = values[0]
+        current_status = values[2].lower()
+
+        # Create context menu
+        context_menu = tk.Menu(self.root, tearoff=0)
+
+        # Update Status submenu
+        status_menu = tk.Menu(context_menu, tearoff=0)
+        context_menu.add_cascade(label="Bulk Update All Components", menu=status_menu)
+
+        statuses = ["pending", "ordered", "approved", "delivered", "installed"]
+        for status in statuses:
+            status_menu.add_command(
+                label=status.title(),
+                command=lambda s=status, sid=structure_id: self.bulk_update_structure_components_status(sid, s)
+            )
+
+        # Show the menu
+        try:
+            context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            context_menu.grab_release()
+
+    def bulk_update_structure_components_status(self, structure_id: str, new_status: str):
+        """Update the status for all components of a given structure."""
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            Messagebox.show_error("Could not find current project.", "Project Error")
+            return
+
+        components = self.db.get_structure_components(structure_id, project.id)
+        if not components:
+            Messagebox.show_info(f"No components found for structure {structure_id} to update.", "No Components")
+            return
+
+        # Removed confirmation dialog / Un-Comment if necessary
+        #confirm = Messagebox.yesno(
+        #    f"Are you sure you want to set all {len(components)} components for structure '{structure_id}' to '{new_status.title()}'?",
+        #    "Confirm Bulk Update"
+        #)
+        #if not confirm:
+        #    return
+
+        date_to_set = datetime.now() if new_status in ["ordered", "delivered", "installed"] else None
+
+        for component in components:
+            self.db.update_component_status(component.id, new_status, None, date_to_set)
+
+        self.show_status_toast(f"Updated {len(components)} components for {structure_id}.")
+        self.refresh_component_status()
+        self.load_structure_components_enhanced(structure_id)
+
+
     def show_structure_context_menu(self, event):
         """Show right-click context menu for structure management and pipe ordering"""
         # Get selected structures
@@ -3080,6 +3172,14 @@ class StructureManagementApp:
         
         context_menu.add_separator()
         
+        # NEW: Structure ordering option
+        context_menu.add_command(
+            label=f"Order Structures ({len(valid_structures)} selected)",
+            command=lambda: self.order_structures_for_selection(valid_structures)
+        )
+        
+        context_menu.add_separator()
+        
         # Group operations
         if len(valid_structures) > 1:
             context_menu.add_command(
@@ -3092,6 +3192,269 @@ class StructureManagementApp:
             context_menu.tk_popup(event.x_root, event.y_root)
         finally:
             context_menu.grab_release()
+
+    def order_structures_for_selection(self, selected_items):
+        """Create structure orders for selected structures - marks all components as ordered"""
+        # Get project ID
+        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        if not project:
+            return
+        
+        # Extract structure data from selected items and get their components
+        structures_data = []
+        total_components = 0
+        
+        for item in selected_items:
+            values = self.structure_tree.item(item, "values")
+            if values and values[0] and "─── Run" not in values[0]:
+                structure_id = values[0]
+                # Get full structure details from database
+                structure = self.db.get_structure(structure_id, project.id)
+                if structure:
+                    # Get components for this structure using your existing method
+                    components = self.db.get_structure_components(structure_id, project.id)
+                    # Filter for components that can be ordered (pending or approved)
+                    orderable_components = [c for c in components if c.status in ['pending', 'approved']]
+                    
+                    if orderable_components:
+                        structures_data.append({
+                            'structure': structure,
+                            'components': orderable_components
+                        })
+                        total_components += len(orderable_components)
+        
+        if not structures_data:
+            Messagebox.show_info("No structures with pending or approved components found in selection", "No Components to Order")
+            return
+        
+        # Create order dialog
+        order_window = ttk.Toplevel(self.root)
+        order_window.title("Order Structures")
+        order_window.geometry("700x800")
+        self.center_toplevel(order_window)
+        order_window.transient(self.root)
+        order_window.grab_set()
+        
+        # Main container
+        main_frame = ttk.Frame(order_window, padding=20)
+        main_frame.pack(fill="both", expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Order Structures", 
+            font=("Helvetica", 16, "bold"),
+            bootstyle="primary"
+        ).pack(pady=(0, 20))
+        
+        # Summary
+        summary_text = f"Ordering {len(structures_data)} structures with {total_components} total components"
+        ttk.Label(
+            main_frame,
+            text=summary_text,
+            font=("Helvetica", 11),
+            bootstyle="info"
+        ).pack(pady=(0, 20))
+        
+        # Order information section
+        order_info_frame = ttk.Labelframe(main_frame, text="Order Information", padding=15)
+        order_info_frame.pack(fill="x", pady=(0, 20))
+        
+        # Order number
+        ttk.Label(order_info_frame, text="Order Number:").grid(row=0, column=0, sticky="w", pady=5)
+        order_number_var = tk.StringVar()
+        order_number_entry = ttk.Entry(order_info_frame, textvariable=order_number_var, width=30)
+        order_number_entry.grid(row=0, column=1, sticky="ew", padx=(10, 0), pady=5)
+        
+        # Supplier
+        ttk.Label(order_info_frame, text="Supplier:").grid(row=1, column=0, sticky="w", pady=5)
+        supplier_var = tk.StringVar()
+        supplier_entry = ttk.Entry(order_info_frame, textvariable=supplier_var, width=30)
+        supplier_entry.grid(row=1, column=1, sticky="ew", padx=(10, 0), pady=5)
+        
+        # Order date
+        ttk.Label(order_info_frame, text="Order Date (MM/DD/YYYY):").grid(row=2, column=0, sticky="w", pady=5)
+        order_date_var = tk.StringVar(value=datetime.now().strftime("%m/%d/%Y"))
+        order_date_entry = ttk.Entry(order_info_frame, textvariable=order_date_var, width=30)
+        order_date_entry.grid(row=2, column=1, sticky="ew", padx=(10, 0), pady=5)
+        
+        # Expected delivery date
+        ttk.Label(order_info_frame, text="Expected Delivery (MM/DD/YYYY):").grid(row=3, column=0, sticky="w", pady=5)
+        expected_date_var = tk.StringVar()
+        expected_date_entry = ttk.Entry(order_info_frame, textvariable=expected_date_var, width=30)
+        expected_date_entry.grid(row=3, column=1, sticky="ew", padx=(10, 0), pady=5)
+        
+        # Notes
+        ttk.Label(order_info_frame, text="Order Notes:").grid(row=4, column=0, sticky="nw", pady=5)
+        notes_text = tk.Text(order_info_frame, height=3, width=30)
+        notes_text.grid(row=4, column=1, sticky="ew", padx=(10, 0), pady=5)
+        
+        # Configure grid weights
+        order_info_frame.columnconfigure(1, weight=1)
+        
+        # Structure and component details section
+        details_frame = ttk.Labelframe(main_frame, text="Structures and Components to Order", padding=15)
+        details_frame.pack(fill="both", expand=True, pady=(0, 20))
+        
+        # Create scrollable frame for structure details
+        canvas = tk.Canvas(details_frame)
+        scrollbar = ttk.Scrollbar(details_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Add structure details
+        for i, struct_data in enumerate(structures_data):
+            structure = struct_data['structure']
+            components = struct_data['components']
+            
+            # Structure header
+            struct_frame = ttk.Frame(scrollable_frame)
+            struct_frame.pack(fill="x", pady=(10 if i > 0 else 0, 5))
+            
+            ttk.Label(
+                struct_frame,
+                text=f"Structure: {structure.structure_id}",
+                font=("Helvetica", 10, "bold"),
+                bootstyle="primary"
+            ).pack(anchor="w")
+            
+            # Component list
+            for component in components:
+                comp_frame = ttk.Frame(scrollable_frame)
+                comp_frame.pack(fill="x", padx=20, pady=1)
+                
+                ttk.Label(
+                    comp_frame,
+                    text=f"• {component.component_type_name} (Status: {component.status.title()})",
+                    font=("Helvetica", 9)
+                ).pack(anchor="w")
+        
+        # Enable mousewheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        def _bind_mousewheel(event):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _unbind_mousewheel(event):
+            canvas.unbind_all("<MouseWheel>")
+        
+        canvas.bind("<Enter>", _bind_mousewheel)
+        canvas.bind("<Leave>", _unbind_mousewheel)
+        
+        # Create order function
+        def create_structure_order():
+            # Validate inputs
+            if not order_number_var.get().strip():
+                Messagebox.show_error("Please enter an order number", "Missing Order Number")
+                order_number_entry.focus()
+                return
+            
+            if not supplier_var.get().strip():
+                Messagebox.show_error("Please enter a supplier", "Missing Supplier")
+                supplier_entry.focus()
+                return
+            
+            # Parse dates
+            try:
+                order_date = datetime.strptime(order_date_var.get().strip(), "%m/%d/%Y") if order_date_var.get().strip() else datetime.now()
+            except ValueError:
+                Messagebox.show_error("Invalid order date format. Please use MM/DD/YYYY", "Date Error")
+                order_date_entry.focus()
+                return
+            
+            expected_delivery = None
+            if expected_date_var.get().strip():
+                try:
+                    expected_delivery = datetime.strptime(expected_date_var.get().strip(), "%m/%d/%Y")
+                except ValueError:
+                    Messagebox.show_error("Invalid expected delivery date format. Please use MM/DD/YYYY", "Date Error")
+                    expected_date_entry.focus()
+                    return
+            
+            # Get notes
+            notes = notes_text.get("1.0", tk.END).strip() or None
+            
+            # Update all components to ordered status using your existing enhanced method
+            updated_count = 0
+            failed_count = 0
+            
+            for struct_data in structures_data:
+                for component in struct_data['components']:
+                    # Create order notes that include structure and order info
+                    component_notes = f"Order #{order_number_var.get().strip()}"
+                    if supplier_var.get().strip():
+                        component_notes += f" - {supplier_var.get().strip()}"
+                    if notes:
+                        component_notes += f" - {notes}"
+                    
+                    # Use your existing enhanced method
+                    success = self.db.update_component_status_enhanced(
+                        component.id,
+                        "ordered",
+                        component_notes,
+                        order_date,  # order_date
+                        expected_delivery,  # expected_delivery_date
+                        None  # actual_delivery_date (not delivered yet)
+                    )
+                    
+                    if success:
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+            
+            # Show results
+            if updated_count > 0:
+                message = f"Successfully ordered {updated_count} components across {len(structures_data)} structures"
+                if failed_count > 0:
+                    message += f"\n{failed_count} components failed to update"
+                
+                Messagebox.show_info(message, "Order Created")
+                order_window.destroy()
+                
+                # Refresh views using your existing methods
+                self.load_structures()
+                self.refresh_component_status()
+                
+                # Switch to component tracking tab to see results
+                if hasattr(self, 'notebook'):
+                    for i in range(self.notebook.index("end")):
+                        if self.notebook.tab(i, "text") == "Component Tracking":
+                            self.notebook.select(i)
+                            break
+            else:
+                Messagebox.show_error("Failed to update any components", "Order Failed")
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill="x")
+        
+        ttk.Button(
+            button_frame,
+            text="Create Order",
+            bootstyle="primary",
+            command=create_structure_order
+        ).pack(side="left", padx=5)
+        
+        ttk.Button(
+            button_frame,
+            text="Cancel",
+            bootstyle="secondary",
+            command=order_window.destroy
+        ).pack(side="right", padx=5)
+        
+        # Focus on order number field
+        order_number_entry.focus()
 
     def calculate_pipe_totals_for_selection(self, selected_items):
         """Calculate pipe totals for selected structures and show in a dialog"""
@@ -3778,10 +4141,35 @@ class StructureManagementApp:
                     except:
                         order_date = str(order_date)
                 
+                # Format delivery date (NEW)
+                delivery_date = order.get('actual_delivery_date', '')
+                if delivery_date:
+                    try:
+                        if isinstance(delivery_date, str):
+                            delivery_date = datetime.fromisoformat(delivery_date).strftime("%m/%d/%Y")
+                        else:
+                            delivery_date = delivery_date.strftime("%m/%d/%Y")
+                    except:
+                        delivery_date = str(delivery_date) if delivery_date else ''
+                else:
+                    delivery_date = ''
+                
                 # Determine status tag
                 status = order.get('status', 'pending').lower()
                 tag = status if status in ['pending', 'ordered', 'in_transit', 'delivered'] else 'pending'
                 
+                delivery_date = order.get('actual_delivery_date', '')
+                if delivery_date:
+                    try:
+                        if isinstance(delivery_date, str):
+                            delivery_date = datetime.fromisoformat(delivery_date).strftime("%m/%d/%Y")
+                        else:
+                            delivery_date = delivery_date.strftime("%m/%d/%Y")
+                    except:
+                        delivery_date = str(delivery_date) if delivery_date else ''
+                else:
+                    delivery_date = ''
+
                 self.pipe_orders_tree.insert(
                     "", "end",
                     values=(
@@ -3790,7 +4178,8 @@ class StructureManagementApp:
                         order.get('diameter', ''),
                         f"{order.get('total_length', 0):.2f}",
                         order.get('status', '').title(),
-                        order_date
+                        order_date,
+                        delivery_date  # NEW: Add delivery date
                     ),
                     tags=(tag,)
                 )
@@ -3800,7 +4189,7 @@ class StructureManagementApp:
             self.logger.info(f"Pipe orders not available yet: {e}")
             self.pipe_orders_tree.insert(
                 "", "end",
-                values=("No orders", "—", "—", "—", "No pipe orders found", "—"),
+                values=("No orders", "—", "—", "—", "No pipe orders found", "—", "—"),
                 tags=("pending",)
             )
 
@@ -4270,6 +4659,8 @@ class StructureManagementApp:
                 show_structure = (status_info['installed'] == status_info['total'])
             elif filter_value == "Delivered" and status_info['total'] > 0:
                 show_structure = (status_info['delivered'] == status_info['total'] and status_info['installed'] < status_info['total'])
+            elif filter_value == "Approved" and status_info['total'] > 0:  # NEW: Handle Approved filter
+                show_structure = (status_info['approved'] == status_info['total'])
             elif filter_value == "Not Started":
                 show_structure = (status_info['total'] == 0)
             elif filter_value == "In Progress" and status_info['total'] > 0:
@@ -4278,7 +4669,7 @@ class StructureManagementApp:
                 show_structure = (status_info['delivered'] + status_info['installed'] < status_info['total'])
             
             if show_structure:
-                # Determine status and tag with new logic
+                # Determine status and tag with new approved logic
                 if status_info['total'] == 0:
                     tag = "not_started"
                     status_text = "Not Started"
@@ -4288,6 +4679,9 @@ class StructureManagementApp:
                 elif status_info['delivered'] == status_info['total']:
                     tag = "delivered"
                     status_text = "Delivered"
+                elif status_info['approved'] == status_info['total']:  
+                    tag = "approved"
+                    status_text = "Approved"
                 elif status_info['delivered'] + status_info['installed'] > 0:
                     tag = "in_progress"
                     status_text = "In Progress"
@@ -6678,7 +7072,6 @@ class StructureManagementApp:
 
     def force_structure_tree_refresh(self):
         """Force refresh of the structure tree display"""
-        print("DEBUG: Force refreshing structure tree")
         
         try:
             if not hasattr(self, 'component_structure_tree'):
@@ -6696,7 +7089,6 @@ class StructureManagementApp:
             if hasattr(self, 'structure_tree'):
                 self.load_structures()
             
-            print("DEBUG: Structure tree refresh completed")
             
         except Exception as e:
             self.logger.error(f"Error refreshing structure tree: {e}", exc_info=True)
@@ -7208,7 +7600,7 @@ class StructureManagementApp:
         # Create rename dialog
         rename_window = ttk.Toplevel(self.root)
         rename_window.title("Rename Structure")
-        rename_window.geometry("450x300")
+        rename_window.geometry("450x400")
         self.center_toplevel(rename_window)
         rename_window.resizable(False, False)
         
@@ -8124,13 +8516,13 @@ class StructureManagementApp:
         
         ttk.Label(
             main_frame, 
-            text="A system for managing infrastructure structures\nand their relationships.", 
+            text="A system for managing structures and pipe orders.", 
             justify="center"
         ).pack(pady=(0, 20))
         
         ttk.Label(
             main_frame, 
-            text="© 2025 Your Name/Company", 
+            text="© 2025 John Braglin / Sullivan Eastern", 
             font=("Helvetica", 10),
             bootstyle="secondary"
         ).pack(pady=(10, 0))
