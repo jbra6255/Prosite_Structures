@@ -6,7 +6,7 @@ from ttkbootstrap.dialogs import Messagebox
 import ttkbootstrap.dialogs as dialogs
 from database_manager import DatabaseManager
 from typing import List, Dict, Optional
-from models import Structure, StructureGroup, StructureComponent
+from models import Structure, StructureGroup, StructureComponent, StructureCost
 
 
 class StructureManagementApp:
@@ -32,6 +32,15 @@ class StructureManagementApp:
         
         # Pipe Sizes (Diameters)
         self.pipe_sizes = ['4', '6', '8', '12', '15', '18', '24', '30', '36', '42', '48', '54', '60', '66', '72']
+
+        #Initialize attributes for Structure Cost Tracking
+        self.cost_tree = None 
+        self.selected_cost_structure_id_var = tk.StringVar()
+        self.po_number_var = tk.StringVar()
+        self.structure_cost_var = tk.StringVar()
+        self.is_paid_var = tk.BooleanVar(value=False)
+        self.payment_date_var = tk.StringVar()
+        self.cost_filter_var = tk.StringVar(value="All")
 
         # Start with login screen
         self.show_login_screen()
@@ -358,7 +367,17 @@ class StructureManagementApp:
             return
         
         project_name = tree.item(selection[0], "values")[0]
-        self.current_project = project_name
+        self.current_project = self.db.get_project_by_name(project_name, self.current_user.id)
+        
+        if not self.current_project:
+            Messagebox.show_error(f"Could not open project '{project_name}'", "Project Error")
+            return
+
+        self.current_project = self.db.get_project_by_name(project_name, self.current_user.id)
+        
+        if not self.current_project:
+            Messagebox.show_error(f"Could not open project '{project_name}'", "Project Error")
+            return
         self.setup_main_interface()
 
     def share_selected_project(self, tree):
@@ -409,7 +428,7 @@ class StructureManagementApp:
         # Project title on left
         ttk.Label(
             navbar, 
-            text=f"{self.current_project}",
+            text=f"{self.current_project.name}",
             font=("Helvetica", 14, "bold"),
             foreground="white",
             bootstyle="inverse-primary"
@@ -702,6 +721,15 @@ class StructureManagementApp:
         
         # Configure the pipe tracking frame
         self.setup_pipe_tracking_tab()
+        
+        # Add structure cost tracking tab
+        self.cost_tracking_frame = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.cost_tracking_frame, text='Structure Cost Tracking')
+        
+        self.setup_structure_cost_tab(self.cost_tracking_frame)
+        
+        #Load structure cost data
+        self.load_structure_costs()
 
     def create_menu_bar(self):
         """Create the application menu bar"""
@@ -1267,7 +1295,7 @@ class StructureManagementApp:
         """Calculate total pipe quantities across the entire project"""
         try:
             # Get project ID
-            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
             if not project:
                 return
             
@@ -1419,7 +1447,7 @@ class StructureManagementApp:
             return
         
         # Get order details for confirmation
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -1689,7 +1717,7 @@ class StructureManagementApp:
             return
         
         # Get order ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -1749,7 +1777,7 @@ class StructureManagementApp:
             return
         
         # Get order ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -1839,7 +1867,7 @@ class StructureManagementApp:
             return
         
         # Get order details
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -2187,7 +2215,7 @@ class StructureManagementApp:
         """Quickly mark a pipe item as fully delivered"""
         try:
             # Get item details to determine full length
-            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
             if not project:
                 return
             
@@ -2289,7 +2317,7 @@ class StructureManagementApp:
         """Complete a partial delivery (mark remaining as delivered)"""
         try:
             # Get item details
-            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
             if not project:
                 return
             
@@ -2371,7 +2399,7 @@ class StructureManagementApp:
         """Show dialog for partial delivery entry"""
         try:
             # Get item details
-            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
             if not project:
                 return
             
@@ -2614,7 +2642,7 @@ class StructureManagementApp:
             self.component_structure_tree.delete(item)
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             print("DEBUG: No project found")
             return
@@ -2778,7 +2806,7 @@ class StructureManagementApp:
             self.component_tree.delete(item)
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -2828,7 +2856,7 @@ class StructureManagementApp:
     def auto_add_base_components(self):
         """Manually add base components to structures missing them (backup function)"""
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -2923,7 +2951,7 @@ class StructureManagementApp:
         structure_type = self.component_structure_tree.item(selection[0], "values")[1]
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -2973,7 +3001,7 @@ class StructureManagementApp:
         structure_type = self.component_structure_tree.item(selection[0], "values")[1]
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -3096,7 +3124,7 @@ class StructureManagementApp:
 
     def bulk_update_structure_components_status(self, structure_id: str, new_status: str):
         """Update the status for all components of a given structure."""
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             Messagebox.show_error("Could not find current project.", "Project Error")
             return
@@ -3196,7 +3224,7 @@ class StructureManagementApp:
     def order_structures_for_selection(self, selected_items):
         """Create structure orders for selected structures - marks all components as ordered"""
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -3459,7 +3487,7 @@ class StructureManagementApp:
     def calculate_pipe_totals_for_selection(self, selected_items):
         """Calculate pipe totals for selected structures and show in a dialog"""
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -3623,7 +3651,7 @@ class StructureManagementApp:
     def order_pipe_for_selection(self, selected_items):
         """Create a pipe order for selected structures"""
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -3847,7 +3875,7 @@ class StructureManagementApp:
     def view_pipe_details_for_selection(self, selected_items):
         """View detailed pipe information for selected structures"""
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -4124,7 +4152,7 @@ class StructureManagementApp:
                 self.pipe_orders_tree.delete(item)
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -4640,7 +4668,7 @@ class StructureManagementApp:
             self.component_structure_tree.delete(item)
         
         # Get project and structures
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -4710,7 +4738,7 @@ class StructureManagementApp:
         structure_type = self.component_structure_tree.item(selection[0], "values")[1]
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -4983,7 +5011,7 @@ class StructureManagementApp:
         structure_id = self.component_structure_tree.item(selection[0], "values")[0]
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -5400,7 +5428,7 @@ class StructureManagementApp:
         structure_id = self.component_structure_tree.item(selection[0], "values")[0]
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -5431,7 +5459,7 @@ class StructureManagementApp:
     def generate_delivery_report(self):
         """Generate a comprehensive delivery report"""
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -5641,7 +5669,7 @@ class StructureManagementApp:
             self.pipe_orders_tree.delete(item)
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -5743,7 +5771,7 @@ class StructureManagementApp:
         
         try:
             # Get project ID
-            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
             if not project:
                 return
             
@@ -5925,7 +5953,7 @@ class StructureManagementApp:
                         return
                 
                 # Get project ID
-                project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+                project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
                 if not project:
                     Messagebox.show_error("Could not find current project", "Project Error")
                     return
@@ -5986,7 +6014,7 @@ class StructureManagementApp:
             return
         
         # Get order ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -6162,7 +6190,7 @@ class StructureManagementApp:
         order_id = None
         if self.pipe_orders_tree.selection():
             order_number = self.pipe_orders_tree.item(self.pipe_orders_tree.selection()[0], "values")[0]
-            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
             if project:
                 pipe_orders = self.db.get_pipe_orders(project.id)
                 for order in pipe_orders:
@@ -6475,7 +6503,7 @@ class StructureManagementApp:
     def generate_pipe_delivery_report(self):
         """Generate a comprehensive pipe delivery report"""
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -6826,7 +6854,7 @@ class StructureManagementApp:
         parent_window.destroy()
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -7106,7 +7134,7 @@ class StructureManagementApp:
         structure_id = self.component_structure_tree.item(selection[0], "values")[0]
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -7440,7 +7468,7 @@ class StructureManagementApp:
         structure_id = self.component_structure_tree.item(selection[0], "values")[0]
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
         
@@ -7592,7 +7620,7 @@ class StructureManagementApp:
             return
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             Messagebox.show_error("Could not find current project", "Project Error")
             return
@@ -7769,7 +7797,7 @@ class StructureManagementApp:
         """Show the group management dialog"""
         try:
             # Get project ID
-            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
             if not project:
                 Messagebox.show_error("Could not find current project", "Project Error")
                 return
@@ -8047,7 +8075,7 @@ class StructureManagementApp:
             return
             
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             Messagebox.show_error("Could not find current project", "Project Error")
             return
@@ -8615,7 +8643,7 @@ class StructureManagementApp:
         """Add a new structure to the database based on form fields with auto-base component"""
         try:
             # Get the current project ID
-            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
             if not project:
                 Messagebox.show_error("Could not find current project", "Project Error")
                 return
@@ -8742,7 +8770,7 @@ class StructureManagementApp:
             return
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             Messagebox.show_error("Could not find current project", "Project Error")
             return
@@ -8785,7 +8813,7 @@ class StructureManagementApp:
             return
         
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
             
@@ -8825,7 +8853,7 @@ class StructureManagementApp:
             self.structure_tree.delete(item)
         
         # Get current project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
             
@@ -9017,7 +9045,7 @@ class StructureManagementApp:
             self.structure_tree.delete(item)
         
         # Get current project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             return
             
@@ -9068,7 +9096,7 @@ class StructureManagementApp:
         """Update an existing structure with form data"""
         try:
             # Get the current project ID
-            project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+            project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
             if not project:
                 Messagebox.show_error("Could not find current project", "Project Error")
                 return
@@ -9279,7 +9307,7 @@ class StructureManagementApp:
             return
             
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             Messagebox.show_error("Could not find current project", "Project Error")
             return
@@ -9311,10 +9339,285 @@ class StructureManagementApp:
         else:
             Messagebox.show_error("Failed to add structures to group", "Database Error")
 
+    def setup_structure_cost_tab(self, parent_frame):
+        """Sets up the UI for tracking structure costs and payment."""
+        
+        # Top Control/Filter Frame
+        control_frame = ttk.Frame(parent_frame)
+        control_frame.pack(fill='x', pady=5)
+        
+        ttk.Label(control_frame, text="Filter:", bootstyle="secondary").pack(side='left', padx=(0, 5))
+        
+        self.cost_filter_var = tk.StringVar(value="All")
+        status_options = ["All", "Paid", "Unpaid", "Planned", "Installed"] # Added 'Planned' and 'Installed'
+        
+        ttk.OptionMenu(
+            control_frame, 
+            self.cost_filter_var, 
+            "All", 
+            *status_options, 
+            bootstyle="secondary",
+            command=self.load_structure_costs
+        ).pack(side='left', padx=5)
+
+        ttk.Button(control_frame, text="Refresh Data", bootstyle="info", command=self.load_structure_costs).pack(side='right', padx=5)
+
+
+        # Treeview for displaying structures and costs
+        tree_frame = ttk.Frame(parent_frame)
+        tree_frame.pack(fill='both', expand=True, pady=5)
+        
+        columns = ('structure_id', 'type', 'site_status', 'po_number', 'cost', 'payment_status', 'payment_date')
+        self.cost_tree = ttk.Treeview(
+            tree_frame, 
+            columns=columns, 
+            show='headings', 
+            selectmode='browse',
+            bootstyle="primary"
+        )
+        
+        self.cost_tree.heading('structure_id', text='Structure ID')
+        self.cost_tree.heading('type', text='Type')
+        self.cost_tree.heading('site_status', text='Site Status')
+        self.cost_tree.heading('po_number', text='PO #')
+        self.cost_tree.heading('cost', text='PO Cost', anchor='e')
+        self.cost_tree.heading('payment_status', text='Payment Status')
+        self.cost_tree.heading('payment_date', text='Payment Date')
+
+        self.cost_tree.column('structure_id', width=100, anchor='w')
+        self.cost_tree.column('type', width=70, anchor='w')
+        self.cost_tree.column('site_status', width=120, anchor='w')
+        self.cost_tree.column('po_number', width=100, anchor='w')
+        self.cost_tree.column('cost', width=90, anchor='e')
+        self.cost_tree.column('payment_status', width=100, anchor='w')
+        self.cost_tree.column('payment_date', width=140, anchor='w')
+        
+        # Scrollbar
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.cost_tree.yview)
+        vsb.pack(side='right', fill='y')
+        self.cost_tree.configure(yscrollcommand=vsb.set)
+        
+        self.cost_tree.pack(fill='both', expand=True)
+        
+        self.cost_tree.bind('<<TreeviewSelect>>', self.on_cost_tree_select)
+        
+        # Edit/Input Frame
+        edit_frame = ttk.LabelFrame(parent_frame, text="Update Cost/Payment Details", padding=10)
+        edit_frame.pack(fill='x', pady=10)
+        
+        # Variables
+        self.selected_cost_structure_id_var = tk.StringVar()
+        self.po_number_var = tk.StringVar()
+        self.structure_cost_var = tk.StringVar()
+        self.is_paid_var = tk.BooleanVar(value=False)
+        self.payment_date_var = tk.StringVar()
+        
+        # Structure ID (read-only)
+        ttk.Label(edit_frame, text="Structure ID:").grid(row=0, column=0, padx=5, pady=5, sticky='w')
+        ttk.Label(edit_frame, textvariable=self.selected_cost_structure_id_var, bootstyle="primary", width=15).grid(row=0, column=1, padx=5, pady=5, sticky='w')
+
+        # PO Number
+        ttk.Label(edit_frame, text="PO Number:").grid(row=1, column=0, padx=5, pady=5, sticky='w')
+        self.po_entry = ttk.Entry(edit_frame, textvariable=self.po_number_var, width=20)
+        self.po_entry.grid(row=1, column=1, padx=5, pady=5, sticky='w')
+        
+        # Structure Cost
+        ttk.Label(edit_frame, text="Structure Cost ($):").grid(row=1, column=2, padx=5, pady=5, sticky='w')
+        self.cost_entry = ttk.Entry(edit_frame, textvariable=self.structure_cost_var, width=15)
+        self.cost_entry.grid(row=1, column=3, padx=5, pady=5, sticky='w')
+        
+        # Is Paid Checkbutton
+        self.paid_check = ttk.Checkbutton(
+            edit_frame, 
+            text="Structure Paid", 
+            variable=self.is_paid_var, 
+            bootstyle="success-round-toggle"
+        )
+        self.paid_check.grid(row=2, column=0, padx=5, pady=5, sticky='w')
+
+        # Payment Date
+        ttk.Label(edit_frame, text="Payment Date (YYYY-MM-DD):").grid(row=2, column=2, padx=5, pady=5, sticky='w')
+        self.date_entry = ttk.Entry(edit_frame, textvariable=self.payment_date_var, width=15)
+        self.date_entry.grid(row=2, column=3, padx=5, pady=5, sticky='w')
+        
+        # Save Button
+        self.save_cost_button = ttk.Button(
+            edit_frame, 
+            text="Save Cost Details", 
+            bootstyle="success", 
+            command=self.save_structure_cost_details
+        )
+        self.save_cost_button.grid(row=3, column=3, padx=5, pady=10, sticky='e')
+        
+        # Clear Button
+        ttk.Button(
+            edit_frame, 
+            text="Clear Form", 
+            bootstyle="secondary", 
+            command=self.clear_cost_form
+        ).grid(row=3, column=2, padx=5, pady=10, sticky='e')
+        
+        self.toggle_cost_form_state('disabled') # Disable form until structure is selected
+
+    def toggle_cost_form_state(self, state):
+        """Helper to enable/disable cost edit form fields."""
+        for widget in [self.po_entry, self.cost_entry, self.paid_check, self.date_entry, self.save_cost_button]:
+            widget.configure(state=state)
+    
+    def on_cost_tree_select(self, event):
+        """Load selected structure cost data into the input form."""
+        selection = self.cost_tree.selection()
+        if not selection:
+            self.clear_cost_form()
+            self.toggle_cost_form_state('disabled')
+            return
+            
+        selected_item = selection[0]
+        # values are: structure_id=0, type=1, site_status=2, po_number=3, cost=4, payment_status=5, payment_date=6
+        values = self.cost_tree.item(selected_item, 'values')
+        
+        if not values:
+            self.clear_cost_form()
+            self.toggle_cost_form_state('disabled')
+            return
+
+        structure_id = values[0]
+        po_number = values[3]
+        cost = values[4]
+        is_paid = values[5].lower() == 'paid'
+        payment_date = values[6] if values[6] not in ("N/A", "") else ""
+        
+        self.selected_cost_structure_id_var.set(structure_id)
+        self.po_number_var.set(po_number if po_number not in ("N/A", None) else "")
+        self.structure_cost_var.set(f"{float(cost):.2f}" if cost != 0.0 else "")
+        self.is_paid_var.set(is_paid)
+        self.payment_date_var.set(payment_date.split(' ')[0] if payment_date and payment_date != "N/A" else "") # Extract date part only
+        
+        self.toggle_cost_form_state('normal')
+
+
+    def load_structure_costs(self, event=None):
+        """Fetch and populate the structure cost treeview based on project and filter."""
+        if not self.current_project:
+            self.logger.warning("Attempted to load cost data with no project selected.")
+            return
+
+        # Clear existing data
+        for item in self.cost_tree.get_children():
+            self.cost_tree.delete(item)
+            
+        data = self.db.get_all_structures_with_cost_status(self.current_project.id)
+        
+        filter_value = self.cost_filter_var.get()
+        
+        for item in data:
+            structure_id = item['structure_id']
+            structure_type = item['structure_type']
+            site_status = item['status']
+            po_number = item['po_number']
+            cost = item['cost']
+            is_paid = item['is_paid']
+            
+            payment_status = "Paid" if is_paid else "Unpaid"
+            payment_date = item['payment_date'] if item['payment_date'] else "N/A"
+
+            # Apply filter
+            filter_match = False
+            if filter_value == "All":
+                filter_match = True
+            elif filter_value == "Paid" and is_paid:
+                filter_match = True
+            elif filter_value == "Unpaid" and not is_paid:
+                filter_match = True
+            elif filter_value == "Planned" and site_status == "Planned":
+                filter_match = True
+            elif filter_value == "Installed" and site_status == "Installed": # Assuming 'Installed' is a status
+                filter_match = True
+            
+            if filter_match:
+                self.cost_tree.insert('', 'end', values=(
+                    structure_id, structure_type, site_status, po_number, cost, payment_status, payment_date
+                ))
+        
+        self.clear_cost_form()
+        self.toggle_cost_form_state('disabled')
+
+
+    def save_structure_cost_details(self):
+        """Validate and save the structure cost and payment details."""
+        if not self.current_project:
+            Messagebox.show_warning("Project Not Selected", "Please select a project first.")
+            return
+
+        structure_id = self.selected_cost_structure_id_var.get()
+        if not structure_id:
+            Messagebox.show_error("No Structure Selected", "Please select a structure from the list to update its cost.")
+            return
+            
+        po_number = self.po_number_var.get().strip()
+        cost_str = self.structure_cost_var.get().strip().replace('$', '').replace(',', '')
+        is_paid = self.is_paid_var.get()
+        payment_date_str = self.payment_date_var.get().strip()
+        
+        # 1. Validate Cost
+        try:
+            structure_cost = float(cost_str) if cost_str else 0.0
+            if structure_cost < 0:
+                 raise ValueError
+        except ValueError:
+            Messagebox.show_error("Input Error", "Structure Cost must be a valid non-negative number.")
+            return
+            
+        # 2. Validate Payment Date if paid
+        payment_date = None
+        if is_paid:
+            if not payment_date_str:
+                Messagebox.show_warning("Payment Details", "Structure is marked as 'Paid'. Please enter a Payment Date (YYYY-MM-DD).")
+                return
+            try:
+                # Use YYYY-MM-DD for standard format
+                payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d')
+            except ValueError:
+                Messagebox.show_error("Date Format Error", "Payment Date must be in YYYY-MM-DD format.")
+                return
+        
+        # 3. Create StructureCost object and save
+        try:
+            cost_obj = StructureCost(
+                structure_id=structure_id,
+                project_id=self.current_project.id,
+                purchase_order_number=po_number,
+                structure_cost=structure_cost,
+                is_paid=is_paid,
+                payment_date=payment_date
+            )
+            
+            saved_id = self.db.save_structure_cost(cost_obj)
+            
+            if saved_id:
+                Messagebox.show_info("Success", f"Cost details for Structure {structure_id} saved successfully.")
+                self.load_structure_costs() # Refresh the data
+            else:
+                Messagebox.show_error("Database Error", f"Failed to save cost details for Structure {structure_id}.")
+                
+        except Exception as e:
+            self.logger.error(f"Error saving cost details: {e}", exc_info=True)
+            Messagebox.show_error("Application Error", f"An unexpected error occurred: {e}")
+
+    def clear_cost_form(self):
+        """Clears the cost input form."""
+        self.selected_cost_structure_id_var.set("")
+        self.po_number_var.set("")
+        self.structure_cost_var.set("")
+        self.is_paid_var.set(False)
+        self.payment_date_var.set("")
+        self.cost_tree.selection_remove(self.cost_tree.selection())
+        self.toggle_cost_form_state('disabled')
+
     def generate_report(self):
         """Generate a summary report of the current project structures"""
         # Get project ID
-        project = self.db.get_project_by_name(self.current_project, self.current_user.id)
+        project = self.db.get_project_by_name(self.current_project.name, self.current_user.id)
         if not project:
             Messagebox.show_error("Could not find current project", "Project Error")
             return

@@ -93,6 +93,19 @@ class StructureRun:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
+@dataclass
+class StructureCost:
+    """Represents the financial tracking details for a specific structure."""
+    structure_id: str
+    project_id: Optional[int] = None
+    purchase_order_number: Optional[str] = None
+    structure_cost: Optional[float] = None  # Cost from PO
+    is_paid: bool = False  # Payment tracking
+    payment_date: Optional[datetime] = None
+    id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
     @property
     def run_name(self) -> str:
         """Generate a name for this run"""

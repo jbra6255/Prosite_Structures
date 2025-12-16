@@ -120,7 +120,7 @@ class DatabaseMigration:
             try:
                 with sqlite3.connect(self.db_path) as conn:
                     # Run the migration
-                    migration['up'](conn)
+                    migration['up'](conn, self.logger)
                     
                     # Record the migration
                     cursor = conn.cursor()
@@ -330,6 +330,38 @@ def create_migrations(db_path, logger):
         add_run_support_columns_down
     )
 
-    # Future migrations can be added here with version 5, 6, etc.
+    def add_structure_cost_table_up(conn, logger):
+        logger.info("Creating structure_costs table for tracking costs")
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE structure_costs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                structure_id TEXT NOT NULL,
+                project_id INTEGER NOT NULL,
+                purchase_order_number TEXT,
+                structure_cost REAL DEFAULT 0.0,
+                is_paid INTEGER DEFAULT 0, -- 0 for False (Unpaid), 1 for True (Paid)
+                payment_date TEXT, -- Stored as TEXT 'YYYY-MM-DD HH:MM:SS'
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(structure_id, project_id),
+                FOREIGN KEY (structure_id) REFERENCES structures(structure_id) ON DELETE CASCADE
+            )
+        ''')
+        logger.info("structure_costs table created")
+
+    def add_structure_cost_table_down(conn, logger):
+        logger.info("Dropping structure_costs table")
+        cursor = conn.cursor()
+        cursor.execute("DROP TABLE IF EXISTS structure_costs")
+
+    migrations.register_migration(
+        5,
+        "Add structure_costs table for financial tracking",
+        add_structure_cost_table_up,
+        add_structure_cost_table_down
+    )
+
+    # Future migrations can be added here
     
     return migrations

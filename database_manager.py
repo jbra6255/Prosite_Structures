@@ -1770,23 +1770,15 @@ class DatabaseManager:
                 # Format delivery date
                 delivery_date_str = delivery_date.isoformat() if delivery_date else None
                 
-                if delivery_date_str:
-                    cursor.execute('''
-                        UPDATE pipe_orders SET
-                            status = ?,
-                            actual_delivery_date = ?,
-                            notes = ?,
-                            updated_at = ?
-                        WHERE id = ?
-                    ''', (status, delivery_date_str, notes, now, order_id))
-                else:
-                    cursor.execute('''
-                        UPDATE pipe_orders SET
-                            status = ?,
-                            notes = ?,
-                            updated_at = ?
-                        WHERE id = ?
-                    ''', (status, notes, now, order_id))
+                # Always update all fields to handle clearing dates
+                cursor.execute('''
+                    UPDATE pipe_orders SET
+                        status = ?,
+                        actual_delivery_date = ?,
+                        notes = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                ''', (status, delivery_date_str, notes, now, order_id))
                 
                 return cursor.rowcount > 0
         except sqlite3.Error as e:
@@ -2104,3 +2096,124 @@ class DatabaseManager:
                 'completion_percentage': 0,
                 'orders_by_status': {}
             }
+        
+    # In database_manager.py, inside the DatabaseManager class:
+
+    def save_structure_cost(self, cost: models.StructureCost) -> Optional[int]:
+        """Inserts or updates a structure cost record."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Format data for DB
+                payment_date_str = cost.payment_date.strftime('%Y-%m-%d %H:%M:%S') if cost.payment_date else None
+                is_paid_int = 1 if cost.is_paid else 0
+                
+                # Check for existing record
+                cursor.execute('''
+                    SELECT id FROM structure_costs WHERE structure_id = ? AND project_id = ?
+                ''', (cost.structure_id, cost.project_id))
+                
+                existing_id = cursor.fetchone()
+                
+                if existing_id:
+                    cost.id = existing_id[0]
+                    # Update existing record
+                    cursor.execute('''
+                        UPDATE structure_costs 
+                        SET 
+                            purchase_order_number = ?,
+                            structure_cost = ?,
+                            is_paid = ?,
+                            payment_date = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (
+                        cost.purchase_order_number, 
+                        cost.structure_cost, 
+                        is_paid_int, 
+                        payment_date_str,
+                        cost.id
+                    ))
+                    self.logger.info(f"Updated structure cost for {cost.structure_id} (ID: {cost.id})")
+                else:
+                    # Insert new record
+                    cursor.execute('''
+                        INSERT INTO structure_costs (
+                            structure_id, project_id, purchase_order_number, 
+                            structure_cost, is_paid, payment_date
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (
+                        cost.structure_id, cost.project_id, cost.purchase_order_number, 
+                        cost.structure_cost, is_paid_int, payment_date_str
+                    ))
+                    cost.id = cursor.lastrowid
+                    self.logger.info(f"Inserted new structure cost for {cost.structure_id} (ID: {cost.id})")
+                
+                conn.commit()
+                return cost.id
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Error saving structure cost: {e}", exc_info=True)
+            return None
+
+    def get_all_structures_with_cost_status(self, project_id: int) -> List[Dict[str, Any]]:
+        """
+        Retrieves all structures for a project, inferring site status from component tracking 
+        and pulling cost/payment info from structure_costs.
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                cursor.execute('''
+                    SELECT 
+                        s.structure_id, 
+                        s.structure_type, 
+                        sc_status.current_status, 
+                        scost.purchase_order_number, 
+                        scost.structure_cost, 
+                        scost.is_paid,
+                        scost.payment_date
+                    FROM structures s
+                    
+                    -- Infer Site Status from the latest component status (simplistic)
+                    LEFT JOIN (
+                        SELECT 
+                            structure_id, 
+                            MAX(status) as current_status 
+                        FROM structure_components 
+                        GROUP BY structure_id
+                    ) sc_status ON s.structure_id = sc_status.structure_id
+                    
+                    -- Left join to StructureCost for financial data
+                    LEFT JOIN structure_costs scost ON s.structure_id = scost.structure_id AND s.project_id = scost.project_id
+                    
+                    WHERE s.project_id = ?
+                    ORDER BY s.structure_id
+                ''', (project_id,))
+
+                results = []
+                for row in cursor.fetchall():
+                    row_dict = dict(row)
+                    
+                    # Interpret the status: If no component status, assume 'Planned'. Otherwise, use component status.
+                    structure_status = row_dict['current_status'] if row_dict['current_status'] else "Planned"
+                        
+                    results.append({
+                        'structure_id': row_dict['structure_id'],
+                        'structure_type': row_dict['structure_type'],
+                        'status': structure_status, 
+                        'po_number': row_dict['purchase_order_number'],
+                        'cost': row_dict['structure_cost'] if row_dict['structure_cost'] is not None else 0.0,
+                        'is_paid': bool(row_dict['is_paid']),
+                        'payment_date': row_dict['payment_date'],
+                    })
+                
+                return results
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting structures with cost status: {e}", exc_info=True)
+            return []
